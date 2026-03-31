@@ -1,0 +1,8 @@
+/_build/
+/deps/
+/cover/
+/doc/
+/.elixir_ls/
+/.DS_Store
+/.env
+erl_crash.dump
