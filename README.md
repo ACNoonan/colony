@@ -1,5 +1,7 @@
 # Colony
 
+[![CI](https://github.com/ACNoonan/colony/actions/workflows/ci.yml/badge.svg)](https://github.com/ACNoonan/colony/actions/workflows/ci.yml)
+
 `Colony` is an early-stage Jido + Kafka runtime project for coordination-heavy agent systems.
 
 The point of this repo is not to prove that "agents can call tools." The point is to prove that a distributed runtime can coordinate lots of specialized workers over a durable event fabric, survive failure, and stay understandable to operators.
@@ -60,6 +62,23 @@ make kafka-topics
 ```
 
 Open the Kafka console at [http://localhost:8080](http://localhost:8080).
+
+## Development
+
+Run the core local checks:
+
+```bash
+mix deps.get
+mix format --check-formatted
+mix test
+```
+
+## Contributor Workflow
+
+1. Fork and create a branch for your change.
+2. Add or update tests when behavior changes.
+3. Run `mix deps.get`, `mix format --check-formatted`, and `mix test`.
+4. Open a PR with a short summary and test plan.
 
 ## Current Constraint
 

@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible problem in Colony
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Git commit SHA or tag
+      placeholder: main @ abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Elixir/OTP versions, Docker status
+      placeholder: macOS 15, Elixir 1.17, OTP 27, docker running
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. mix deps.get
+        2. mix test
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      render: shell
