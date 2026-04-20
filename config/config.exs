@@ -15,5 +15,5 @@ config :colony_cell,
 config :colony_kafka,
   adapter: ColonyKafka.Adapters.Brod,
   brokers: [
-    {"3.250.29.185", 19092}
+    {"localhost", 19092}
   ]
