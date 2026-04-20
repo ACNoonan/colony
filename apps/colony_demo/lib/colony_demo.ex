@@ -1,7 +1,18 @@
 defmodule ColonyDemo do
   @moduledoc """
-  First reference demo: produce events into Kafka, consume them into cells,
-  and show idempotent replay after a simulated crash.
+  First reference demo: incident-response swarm.
+
+  A deployment to `checkout-svc` ships a schema change that breaks downstream
+  consumers. The swarm walks five phases as Kafka events:
+
+    1. Ingest      — `deployment.completed`, `schema.drift.detected`
+    2. Fan-out     — `incident.opened`, N × `impact.scan.requested`
+    3. Fan-in      — N × `impact.scan.reported`, `incident.triaged`
+    4. Decide+act  — `mitigation.proposed`, `mitigation.selected`, `mitigation.applied`
+    5. Close       — `incident.resolved`
+
+  Detection events partition by service; incident events partition by
+  incident_id so one incident's causal chain lands on one cell.
   """
 
   require Logger
@@ -12,7 +23,7 @@ defmodule ColonyDemo do
   @event_topic Application.compile_env(:colony_demo, :event_topic, "colony.agent.events")
 
   def run do
-    Logger.info("=== Colony Demo: Quote-to-Fulfillment ===")
+    Logger.info("=== Colony Demo: Incident-Response Swarm ===")
 
     ensure_topic()
     start_consumer()
@@ -151,64 +162,236 @@ defmodule ColonyDemo do
 
   def sample_events do
     correlation = "corr-#{System.unique_integer([:positive])}"
+    incident = "incident-042"
+    service = "checkout-svc"
+    tenant = "tenant-acme"
+    swarm = "incident-response"
+    downstreams = ["orders-svc", "billing-svc", "shipping-svc"]
 
-    [
+    deploy =
       Event.new(%{
-        id: "evt-#{System.unique_integer([:positive])}",
-        type: "order.submitted",
-        source: "erp.orders",
-        subject: "account-17",
-        partition_key: "account-17",
-        tenant_id: "tenant-acme",
-        swarm_id: "quote-fulfillment",
-        agent_id: "intake-1",
+        id: "evt-deploy-#{System.unique_integer([:positive])}",
+        type: "deployment.completed",
+        source: "cd.system",
+        subject: service,
+        partition_key: service,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "cd-runner",
         correlation_id: correlation,
         causation_id: correlation,
         sequence: 1,
-        data: %{"order_id" => "ORD-100", "sku" => "SKU-123", "quantity" => 20}
-      }),
-      Event.new(%{
-        id: "evt-#{System.unique_integer([:positive])}",
-        type: "inventory.reserved",
-        source: "wms.inventory",
-        subject: "account-17",
-        partition_key: "account-17",
-        tenant_id: "tenant-acme",
-        swarm_id: "quote-fulfillment",
-        agent_id: "allocator-1",
-        correlation_id: correlation,
-        causation_id: "evt-1",
-        sequence: 2,
-        data: %{"reservation_id" => "res-22", "status" => "confirmed"}
-      }),
-      Event.new(%{
-        id: "evt-#{System.unique_integer([:positive])}",
-        type: "pricing.quoted",
-        source: "pricing.engine",
-        subject: "account-42",
-        partition_key: "account-42",
-        tenant_id: "tenant-acme",
-        swarm_id: "quote-fulfillment",
-        agent_id: "pricer-1",
-        correlation_id: correlation,
-        causation_id: correlation,
-        sequence: 1,
-        data: %{"quote_id" => "Q-500", "total" => 4200, "currency" => "USD"}
-      }),
-      Event.new(%{
-        id: "evt-#{System.unique_integer([:positive])}",
-        type: "fulfillment.scheduled",
-        source: "logistics.planner",
-        subject: "account-17",
-        partition_key: "account-17",
-        tenant_id: "tenant-acme",
-        swarm_id: "quote-fulfillment",
-        agent_id: "fulfillment-1",
-        correlation_id: correlation,
-        causation_id: "evt-2",
-        sequence: 3,
-        data: %{"shipment_id" => "SHP-77", "eta" => "2026-03-10"}
+        data: %{
+          "service" => service,
+          "version" => "v2.4.0",
+          "schema_hash" => "9a1b4c2d"
+        }
       })
-    ]
+
+    drift =
+      Event.new(%{
+        id: "evt-drift-#{System.unique_integer([:positive])}",
+        type: "schema.drift.detected",
+        source: "detector.schema",
+        subject: service,
+        partition_key: service,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "drift-detector-1",
+        correlation_id: correlation,
+        causation_id: deploy.id,
+        sequence: 2,
+        data: %{
+          "service" => service,
+          "field" => "order.total",
+          "from" => "integer_cents",
+          "to" => "decimal_dollars",
+          "impacted_consumers" => downstreams
+        }
+      })
+
+    opened =
+      Event.new(%{
+        id: "evt-opened-#{System.unique_integer([:positive])}",
+        type: "incident.opened",
+        source: "coordinator.triage",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "coordinator-1",
+        correlation_id: correlation,
+        causation_id: drift.id,
+        sequence: 1,
+        data: %{
+          "incident_id" => incident,
+          "trigger_event" => drift.id,
+          "service" => service
+        }
+      })
+
+    scan_requests =
+      for {downstream, idx} <- Enum.with_index(downstreams) do
+        Event.new(%{
+          id: "evt-scan-req-#{downstream}-#{System.unique_integer([:positive])}",
+          type: "impact.scan.requested",
+          source: "coordinator.triage",
+          subject: incident,
+          partition_key: incident,
+          tenant_id: tenant,
+          swarm_id: swarm,
+          agent_id: "coordinator-1",
+          correlation_id: correlation,
+          causation_id: opened.id,
+          sequence: 2 + idx,
+          data: %{"target_service" => downstream, "incident_id" => incident}
+        })
+      end
+
+    scan_reports =
+      for {{downstream, severity, endpoints}, idx} <-
+            Enum.with_index([
+              {"orders-svc", "high", 4},
+              {"billing-svc", "medium", 2},
+              {"shipping-svc", "low", 1}
+            ]) do
+        request = Enum.at(scan_requests, idx)
+
+        Event.new(%{
+          id: "evt-scan-rpt-#{downstream}-#{System.unique_integer([:positive])}",
+          type: "impact.scan.reported",
+          source: "scanner.#{downstream}",
+          subject: incident,
+          partition_key: incident,
+          tenant_id: tenant,
+          swarm_id: swarm,
+          agent_id: "scanner-#{downstream}",
+          correlation_id: correlation,
+          causation_id: request.id,
+          sequence: 5 + idx,
+          data: %{
+            "target_service" => downstream,
+            "blast_radius" => severity,
+            "affected_endpoints" => endpoints
+          }
+        })
+      end
+
+    triaged =
+      Event.new(%{
+        id: "evt-triaged-#{System.unique_integer([:positive])}",
+        type: "incident.triaged",
+        source: "coordinator.triage",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "coordinator-1",
+        correlation_id: correlation,
+        causation_id: List.last(scan_reports).id,
+        sequence: 8,
+        data: %{
+          "severity" => "high",
+          "total_affected_endpoints" => 7,
+          "candidate_mitigations" => ["rollback", "schema_shim"]
+        }
+      })
+
+    proposal_rollback =
+      Event.new(%{
+        id: "evt-prop-rollback-#{System.unique_integer([:positive])}",
+        type: "mitigation.proposed",
+        source: "specialist.rollback",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "specialist-rollback-1",
+        correlation_id: correlation,
+        causation_id: triaged.id,
+        sequence: 9,
+        data: %{
+          "strategy" => "rollback",
+          "target_version" => "v2.3.4",
+          "estimated_recovery_seconds" => 90
+        }
+      })
+
+    proposal_shim =
+      Event.new(%{
+        id: "evt-prop-shim-#{System.unique_integer([:positive])}",
+        type: "mitigation.proposed",
+        source: "specialist.schema_shim",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "specialist-shim-1",
+        correlation_id: correlation,
+        causation_id: triaged.id,
+        sequence: 10,
+        data: %{
+          "strategy" => "schema_shim",
+          "shim_layer" => "gateway",
+          "estimated_recovery_seconds" => 300
+        }
+      })
+
+    selected =
+      Event.new(%{
+        id: "evt-selected-#{System.unique_integer([:positive])}",
+        type: "mitigation.selected",
+        source: "coordinator.triage",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "coordinator-1",
+        correlation_id: correlation,
+        causation_id: proposal_rollback.id,
+        sequence: 11,
+        data: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
+      })
+
+    applied =
+      Event.new(%{
+        id: "evt-applied-#{System.unique_integer([:positive])}",
+        type: "mitigation.applied",
+        source: "applier.rollout",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "applier-1",
+        correlation_id: correlation,
+        causation_id: selected.id,
+        sequence: 12,
+        data: %{
+          "strategy" => "rollback",
+          "target_version" => "v2.3.4",
+          "result" => "ok"
+        }
+      })
+
+    resolved =
+      Event.new(%{
+        id: "evt-resolved-#{System.unique_integer([:positive])}",
+        type: "incident.resolved",
+        source: "coordinator.triage",
+        subject: incident,
+        partition_key: incident,
+        tenant_id: tenant,
+        swarm_id: swarm,
+        agent_id: "coordinator-1",
+        correlation_id: correlation,
+        causation_id: applied.id,
+        sequence: 13,
+        data: %{"outcome" => "mitigated", "duration_seconds" => 214}
+      })
+
+    [deploy, drift, opened] ++
+      scan_requests ++
+      scan_reports ++
+      [triaged, proposal_rollback, proposal_shim, selected, applied, resolved]
   end
 end
