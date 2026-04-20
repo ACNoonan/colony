@@ -14,7 +14,8 @@ defmodule ColonyKafka.Consumer do
 
   alias ColonyCore.Event
 
-  Record.defrecord(:kafka_message,
+  Record.defrecord(
+    :kafka_message,
     Record.extract(:kafka_message, from_lib: "kafka_protocol/include/kpro_public.hrl")
   )
 

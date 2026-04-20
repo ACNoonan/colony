@@ -31,15 +31,19 @@ defmodule ColonyDemo do
   def ensure_topic do
     brokers = Application.fetch_env!(:colony_kafka, :brokers)
 
-    case :brod.create_topics(brokers, [
-           %{
-             name: @event_topic,
-             num_partitions: 3,
-             replication_factor: 1,
-             assignments: [],
-             configs: []
-           }
-         ], %{timeout: 5_000}) do
+    case :brod.create_topics(
+           brokers,
+           [
+             %{
+               name: @event_topic,
+               num_partitions: 3,
+               replication_factor: 1,
+               assignments: [],
+               configs: []
+             }
+           ],
+           %{timeout: 5_000}
+         ) do
       :ok ->
         Logger.info("Created topic #{@event_topic}")
 
@@ -83,7 +87,10 @@ defmodule ColonyDemo do
   def inspect_cells do
     Logger.info("=== Cell Snapshots ===")
 
-    for {cell_id, _pid, _} <- Registry.select(ColonyCell.Registry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]) do
+    for {cell_id, _pid, _} <-
+          Registry.select(ColonyCell.Registry, [
+            {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
+          ]) do
       snapshot = ColonyCell.snapshot(cell_id)
 
       Logger.info(
@@ -99,7 +106,10 @@ defmodule ColonyDemo do
     case Registry.select(ColonyCell.Registry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}]) do
       [{cell_id, pid} | _] ->
         before = ColonyCell.snapshot(cell_id)
-        Logger.info("Cell #{cell_id} BEFORE crash: #{before.handled_events} events, last_seq=#{before.last_sequence}")
+
+        Logger.info(
+          "Cell #{cell_id} BEFORE crash: #{before.handled_events} events, last_seq=#{before.last_sequence}"
+        )
 
         Logger.info("Killing cell #{cell_id} (pid: #{inspect(pid)})")
         Process.exit(pid, :kill)
@@ -125,7 +135,11 @@ defmodule ColonyDemo do
         end)
 
         after_replay = ColonyCell.snapshot(cell_id)
-        Logger.info("Cell #{cell_id} AFTER replay: #{after_replay.handled_events} events, last_seq=#{after_replay.last_sequence}")
+
+        Logger.info(
+          "Cell #{cell_id} AFTER replay: #{after_replay.handled_events} events, last_seq=#{after_replay.last_sequence}"
+        )
+
         Logger.info("Projections: #{inspect(after_replay.projections)}")
 
       [] ->
