@@ -37,6 +37,9 @@ defmodule ColonyDemo do
 
     inspect_cells()
     simulate_crash_and_replay(events)
+    demonstrate_action_dedup(events)
+
+    Logger.info("=== Demo Complete ===")
   end
 
   def ensure_topic do
@@ -106,6 +109,7 @@ defmodule ColonyDemo do
 
       Logger.info(
         "Cell #{cell_id}: #{snapshot.handled_events} events, " <>
+          "actions=#{snapshot.applied_actions}, " <>
           "last_seq=#{snapshot.last_sequence}, projections=#{inspect(snapshot.projections)}"
       )
     end
@@ -119,7 +123,8 @@ defmodule ColonyDemo do
         before = ColonyCell.snapshot(cell_id)
 
         Logger.info(
-          "Cell #{cell_id} BEFORE crash: #{before.handled_events} events, last_seq=#{before.last_sequence}"
+          "Cell #{cell_id} BEFORE crash: #{before.handled_events} events, " <>
+            "actions=#{before.applied_actions}, last_seq=#{before.last_sequence}"
         )
 
         Logger.info("Killing cell #{cell_id} (pid: #{inspect(pid)})")
@@ -148,7 +153,8 @@ defmodule ColonyDemo do
         after_replay = ColonyCell.snapshot(cell_id)
 
         Logger.info(
-          "Cell #{cell_id} AFTER replay: #{after_replay.handled_events} events, last_seq=#{after_replay.last_sequence}"
+          "Cell #{cell_id} AFTER replay: #{after_replay.handled_events} events, " <>
+            "actions=#{after_replay.applied_actions}, last_seq=#{after_replay.last_sequence}"
         )
 
         Logger.info("Projections: #{inspect(after_replay.projections)}")
@@ -156,8 +162,50 @@ defmodule ColonyDemo do
       [] ->
         Logger.warning("No cells to crash")
     end
+  end
 
-    Logger.info("=== Demo Complete ===")
+  def demonstrate_action_dedup(events) do
+    Logger.info("=== Action-Level Idempotency ===")
+
+    applied = Enum.find(events, fn e -> e.type == "mitigation.applied" end)
+    cell_id = applied.partition_key || applied.subject
+
+    case ColonyCell.start_cell(cell_id) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+    end
+
+    retry_event =
+      Event.new(%{
+        id: "evt-applied-retry-#{System.unique_integer([:positive])}",
+        type: applied.type,
+        source: applied.source,
+        subject: applied.subject,
+        partition_key: applied.partition_key,
+        tenant_id: applied.tenant_id,
+        swarm_id: applied.swarm_id,
+        agent_id: applied.agent_id,
+        action_key: applied.action_key,
+        correlation_id: applied.correlation_id,
+        causation_id: applied.id,
+        sequence: 99,
+        data: applied.data
+      })
+
+    Logger.info(
+      "Dispatching retry #{retry_event.id} " <>
+        "(action_key=#{retry_event.action_key}) → cell:#{cell_id}"
+    )
+
+    {:ok, status} = ColonyCell.dispatch(cell_id, retry_event)
+    Logger.info("[retry] #{retry_event.id} → #{status} (expected :duplicate_action)")
+
+    snapshot = ColonyCell.snapshot(cell_id)
+
+    Logger.info(
+      "Cell #{cell_id} after retry: #{snapshot.handled_events} events, " <>
+        "actions=#{snapshot.applied_actions}, last_seq=#{snapshot.last_sequence}"
+    )
   end
 
   def sample_events do
@@ -363,6 +411,7 @@ defmodule ColonyDemo do
         tenant_id: tenant,
         swarm_id: swarm,
         agent_id: "applier-1",
+        action_key: "apply:rollback:#{incident}",
         correlation_id: correlation,
         causation_id: selected.id,
         sequence: 12,

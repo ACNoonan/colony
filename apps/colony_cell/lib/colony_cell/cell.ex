@@ -21,6 +21,7 @@ defmodule ColonyCell.Cell do
     state = %{
       cell_id: Keyword.fetch!(opts, :cell_id),
       handled_events: MapSet.new(),
+      applied_actions: MapSet.new(),
       last_sequence: 0,
       projections: %{}
     }
@@ -30,15 +31,21 @@ defmodule ColonyCell.Cell do
 
   @impl true
   def handle_call({:dispatch, %Event{} = event}, _from, state) do
-    if MapSet.member?(state.handled_events, event.id) do
-      {:reply, {:ok, :duplicate}, state}
-    else
-      next_state =
-        state
-        |> record_event(event)
-        |> project_event(event)
+    cond do
+      MapSet.member?(state.handled_events, event.id) ->
+        {:reply, {:ok, :duplicate}, state}
 
-      {:reply, {:ok, :accepted}, next_state}
+      event.action_key && MapSet.member?(state.applied_actions, event.action_key) ->
+        {:reply, {:ok, :duplicate_action}, record_event(state, event)}
+
+      true ->
+        next_state =
+          state
+          |> record_event(event)
+          |> record_action(event)
+          |> project_event(event)
+
+        {:reply, {:ok, :accepted}, next_state}
     end
   end
 
@@ -47,6 +54,7 @@ defmodule ColonyCell.Cell do
       cell_id: state.cell_id,
       last_sequence: state.last_sequence,
       handled_events: MapSet.size(state.handled_events),
+      applied_actions: MapSet.size(state.applied_actions),
       projections: state.projections
     }
 
@@ -55,6 +63,12 @@ defmodule ColonyCell.Cell do
 
   defp record_event(state, %Event{} = event) do
     %{state | handled_events: MapSet.put(state.handled_events, event.id)}
+  end
+
+  defp record_action(state, %Event{action_key: nil}), do: state
+
+  defp record_action(state, %Event{action_key: key}) do
+    %{state | applied_actions: MapSet.put(state.applied_actions, key)}
   end
 
   defp project_event(state, %Event{subject: subject, sequence: sequence, data: data}) do
