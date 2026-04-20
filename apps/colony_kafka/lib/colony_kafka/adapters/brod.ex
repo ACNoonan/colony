@@ -28,6 +28,7 @@ defmodule ColonyKafka.Adapters.Brod do
   def subscribe(topic, opts \\ []) do
     group_id = Keyword.get(opts, :group_id, "colony-#{topic}")
     handler = Keyword.fetch!(opts, :handler)
+    begin_offset = Keyword.get(opts, :begin_offset, :latest)
 
     config = %{
       client: @client,
@@ -40,7 +41,7 @@ defmodule ColonyKafka.Adapters.Brod do
         offset_commit_policy: :commit_to_kafka_v2,
         offset_commit_interval_seconds: 5
       ],
-      consumer_config: [begin_offset: :earliest]
+      consumer_config: [begin_offset: begin_offset]
     }
 
     :brod.start_link_group_subscriber_v2(config)
