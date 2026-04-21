@@ -20,3 +20,8 @@ config :colony_kafka,
   brokers: [
     {"localhost", 19092}
   ]
+
+if config_env() == :test do
+  config :colony_kafka, adapter: ColonyKafka.Adapters.Unconfigured
+  config :colony_core, llm_adapter: ColonyCore.LLM.Fixture
+end

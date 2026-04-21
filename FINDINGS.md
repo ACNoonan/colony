@@ -146,6 +146,67 @@ agent reasoning.
   tc-netem). If latencies spike cell throughput, switch emit to `cast`
   with a separate async publisher process or a small buffering pool.
 
+## `.env` isn't auto-loaded (Phase 6)
+
+`config/runtime.exs` reads `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+`COLONY_LLM_ADAPTER` from `System.get_env`. `.env` is gitignored but
+nothing in the repo sources it. Operator must `set -a; source .env; set +a`
+before `mix` or `iex -S mix` sees the keys.
+
+- **How to test:** run `mix run -e "IO.inspect(Application.get_env(:colony_core, :llm_anthropic))"`
+  after a fresh terminal without sourcing — expect `api_key: nil`. Fix is
+  either a one-line shell wrapper in Makefile (`include .env; export`)
+  or a `dotenvy` dep.
+
+## Reasoner-emitted events have no sequence (Phase 6)
+
+`ColonyCell.Reasoner.emit_tool_call/3` builds attrs without `:sequence`,
+so the outbound event's `sequence` field is nil. Projection ordering
+today falls back to `recorded_at`, but any operator tool that relies on
+`sequence` for ordering (timeline already does) will see gaps for
+LLM-emitted events.
+
+- **How to test:** `mix colony.timeline <incident>` after a reasoning run;
+  entries sourced from the reasoner will show `seq=` blank. Fix is to
+  read `last_sequence` from cell state before emit (extra `GenServer.call`
+  per emit) or have `ColonyCell.emit/3` auto-increment sequence when not
+  provided.
+
+## No rate/budget gate on Reasoner (Phase 6)
+
+Nothing prevents a misbehaving cell from producing an event whose type
+re-triggers the same cell's reasoner, in a loop. Coordinator's
+`mitigation.proposed` trigger currently can't self-loop (coordinator
+doesn't emit proposed), but the safety isn't structural.
+
+- **How to test:** add a role whose tool set includes the event type
+  that triggers its own reasoning, run one reasoning round, confirm
+  runaway. Fix is a per-cell token budget (tokens used / max per
+  correlation) and/or a depth counter carried on event data.
+
+## LLM adapter tool-use parsers are untested against live APIs (Phase 6)
+
+Anthropic and OpenAI adapters translate messages/tools to each provider's
+wire shape, and parse the response back to a normalized map. None of
+this has hit a real API. Likely correct (shapes follow current docs) but
+the first real call may surface something off.
+
+- **How to test:** source `.env`, `iex -S mix`, call
+  `ColonyCore.LLM.call([%{role: :user, content: "say hi"}], tools: [])`
+  against each provider. Fix in the adapter's `parse/1`.
+
+## Reasoner demo not wired into the existing `mix demo` (Phase 6)
+
+The plumbing is live but nothing in the demo narrative actually spawns
+a prototype-aware cell or dispatches an event that triggers reasoning.
+You can only exercise the full loop by hand today.
+
+- **How to test:** add a `mix colony.reason <incident>` task that starts
+  a coordinator cell (prototype: "coordinator"), publishes a synthetic
+  `mitigation.proposed`, waits, and prints the cell's snapshot. Expect
+  `handled_events = 1` and (with valid kafka + keys) a
+  `mitigation.selected` to appear downstream.
+
 ## Commit `1a85585` missing co-author trailer
 
 Phase 1 commit omits the `Co-Authored-By: Claude Opus 4.7` trailer that

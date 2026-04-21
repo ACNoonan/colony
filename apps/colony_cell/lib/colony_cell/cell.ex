@@ -68,6 +68,8 @@ defmodule ColonyCell.Cell do
           |> record_action(event)
           |> project_event(event)
 
+        maybe_reason(next_state, event)
+
         {:reply, {:ok, :accepted}, next_state}
     end
   end
@@ -114,6 +116,22 @@ defmodule ColonyCell.Cell do
   defp detect_drift(%{prompt_hash: nil} = state, _event), do: state
 
   defp detect_drift(%{prompt_hash: current} = state, %Event{prompt_hash: current}), do: state
+
+  defp maybe_reason(%{manifest_cell: nil}, _event), do: :ok
+  defp maybe_reason(%{manifest_cell: %Manifest.Cell{kind: :system}}, _event), do: :ok
+
+  defp maybe_reason(%{manifest_cell: %Manifest.Cell{role: role}} = state, %Event{type: type} = event) do
+    if reasoning_triggered?(role, type) do
+      Task.Supervisor.start_child(ColonyCell.TaskSupervisor, fn ->
+        ColonyCell.Reasoner.reason(state.cell_id, event, state.projections, state.manifest_cell)
+      end)
+    end
+
+    :ok
+  end
+
+  defp reasoning_triggered?("coordinator", "mitigation.proposed"), do: true
+  defp reasoning_triggered?(_role, _type), do: false
 
   defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
     Logger.warning(

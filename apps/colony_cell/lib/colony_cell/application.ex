@@ -6,6 +6,7 @@ defmodule ColonyCell.Application do
     children = [
       {Registry, keys: :unique, name: registry_name()},
       {DynamicSupervisor, strategy: :one_for_one, name: supervisor_name()},
+      {Task.Supervisor, name: ColonyCell.TaskSupervisor},
       ColonyCell.SystemSupervisor
     ]
 
