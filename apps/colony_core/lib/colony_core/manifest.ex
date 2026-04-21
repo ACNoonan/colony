@@ -45,6 +45,7 @@ defmodule ColonyCore.Manifest do
       :topic,
       :partition_scheme,
       :prompt,
+      consumes: [],
       reasoning_triggers: []
     ]
 
@@ -61,6 +62,7 @@ defmodule ColonyCore.Manifest do
             topic: binary(),
             partition_scheme: partition_scheme(),
             prompt: binary() | nil,
+            consumes: [binary()],
             reasoning_triggers: [binary()]
           }
   end
@@ -113,6 +115,24 @@ defmodule ColonyCore.Manifest do
   @spec cells_for_topic(t(), binary()) :: [Cell.t()]
   def cells_for_topic(%__MODULE__{cells: cells}, topic) when is_binary(topic) do
     Enum.filter(cells, &(&1.topic == topic))
+  end
+
+  @doc """
+  Agent cells on `topic` that declare `event_type` in their `consumes`
+  list. This is the routing answer: for a Kafka-arrived event, which
+  prototypes should each get an instance dispatched?
+
+  System cells are not included — they manage their own subscriptions
+  via `ColonyCell.SystemSupervisor`.
+  """
+  @spec consuming_cells(t(), binary(), binary()) :: [Cell.t()]
+  def consuming_cells(%__MODULE__{} = manifest, topic, event_type)
+      when is_binary(topic) and is_binary(event_type) do
+    manifest
+    |> cells_for_topic(topic)
+    |> Enum.filter(fn cell ->
+      cell.kind == :agent and event_type in cell.consumes
+    end)
   end
 
   @doc """
@@ -192,12 +212,13 @@ defmodule ColonyCore.Manifest do
       topic: fetch_string!(m, :topic),
       partition_scheme: Map.fetch!(m, :partition_scheme),
       prompt: Map.get(m, :prompt),
-      reasoning_triggers: fetch_triggers!(m)
+      consumes: fetch_string_list!(m, :consumes),
+      reasoning_triggers: fetch_string_list!(m, :reasoning_triggers)
     }
   end
 
-  defp fetch_triggers!(m) do
-    case Map.get(m, :reasoning_triggers, []) do
+  defp fetch_string_list!(m, key) do
+    case Map.get(m, key, []) do
       list when is_list(list) ->
         Enum.each(list, fn
           s when is_binary(s) and byte_size(s) > 0 ->
@@ -205,14 +226,14 @@ defmodule ColonyCore.Manifest do
 
           other ->
             raise ArgumentError,
-                  "reasoning_triggers entries must be non-empty strings, got: #{inspect(other)}"
+                  "#{key} entries must be non-empty strings, got: #{inspect(other)}"
         end)
 
         list
 
       other ->
         raise ArgumentError,
-              "reasoning_triggers must be a list of event type strings, got: #{inspect(other)}"
+              "#{key} must be a list of event type strings, got: #{inspect(other)}"
     end
   end
 
@@ -227,7 +248,35 @@ defmodule ColonyCore.Manifest do
     validate_non_empty!(cells)
     validate_unique_names!(cells)
     Enum.each(cells, &validate_cell!/1)
+    Enum.each(cells, &validate_consumes!/1)
+    Enum.each(cells, &validate_trigger_consume_relationship!/1)
     validate_scheme_consistency_per_topic!(cells)
+    :ok
+  end
+
+  defp validate_consumes!(%Cell{kind: :agent, consumes: []} = cell) do
+    raise ArgumentError,
+          "agent cell #{inspect(cell.name)} must declare a non-empty `consumes` list"
+  end
+
+  defp validate_consumes!(%Cell{kind: :system, consumes: consumes} = cell) when consumes != [] do
+    raise ArgumentError,
+          "system cell #{inspect(cell.name)} must not declare `consumes` (got #{inspect(consumes)})"
+  end
+
+  defp validate_consumes!(%Cell{}), do: :ok
+
+  defp validate_trigger_consume_relationship!(%Cell{kind: :system}), do: :ok
+
+  defp validate_trigger_consume_relationship!(%Cell{} = cell) do
+    extra = cell.reasoning_triggers -- cell.consumes
+
+    if extra != [] do
+      raise ArgumentError,
+            "cell #{inspect(cell.name)} declares reasoning_triggers #{inspect(extra)} " <>
+              "that aren't in its consumes list #{inspect(cell.consumes)}"
+    end
+
     :ok
   end
 

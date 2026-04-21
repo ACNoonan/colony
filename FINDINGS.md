@@ -216,6 +216,19 @@ and they log a warning. Not broken, just noisy.
   the "subscribe failed" log level to debug when the reason is
   `:kafka_adapter_not_configured` specifically.
 
+## `ColonyDemo.run()` hasn't been exercised since multi-role (Phase 8)
+
+Phase 8 switches the consumer to route each event to every cell whose
+`consumes:` list includes the event type, and renames runtime cells to
+`<role>:<partition>`. The in-code `ColonyDemo.run()` was updated to the
+new shape but not tested end-to-end — only `mix colony.reason --dispatch`
+has been run. The scripted demo may regress silently.
+
+- **How to test:** `make up && mix run -e "ColonyDemo.run()"`. Expect
+  cells named e.g. `coordinator:incident-042`, `coordinator:checkout-svc`,
+  `detector:checkout-svc`, etc., in the inspect_cells output; the
+  crash+replay phase should still converge to identical projections.
+
 ## Commit `1a85585` missing co-author trailer
 
 Phase 1 commit omits the `Co-Authored-By: Claude Opus 4.7` trailer that

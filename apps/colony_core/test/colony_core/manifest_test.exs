@@ -14,7 +14,8 @@ defmodule ColonyCore.ManifestTest do
             role: "coordinator",
             topic: "colony.agent.events",
             partition_scheme: {:field, :subject},
-            prompt: "roles/coordinator.md"
+            prompt: "roles/coordinator.md",
+            consumes: ["mitigation.proposed"]
           },
           %{
             name: "runtime.logger",
@@ -101,6 +102,106 @@ defmodule ColonyCore.ManifestTest do
     end
   end
 
+  describe "consumes" do
+    test "agent cells must declare non-empty consumes" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          }
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/must declare a non-empty `consumes`/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+
+    test "system cells must not declare consumes" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :system,
+            role: "logger",
+            topic: "t",
+            partition_scheme: :single,
+            consumes: ["x"]
+          }
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/must not declare `consumes`/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+
+    test "reasoning_triggers must be a subset of consumes" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md",
+            consumes: ["x.happened"],
+            reasoning_triggers: ["y.happened"]
+          }
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/reasoning_triggers.*aren't in its consumes/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+  end
+
+  describe "consuming_cells/3" do
+    test "returns only agent cells on topic that declare the event type" do
+      manifest =
+        Manifest.from_raw!(%{
+          cells: [
+            %{
+              name: "coord",
+              kind: :agent,
+              role: "coordinator",
+              topic: "t",
+              partition_scheme: {:field, :subject},
+              prompt: "p.md",
+              consumes: ["mitigation.proposed"]
+            },
+            %{
+              name: "spec",
+              kind: :agent,
+              role: "specialist",
+              topic: "t",
+              partition_scheme: {:field, :subject},
+              prompt: "p.md",
+              consumes: ["incident.triaged"]
+            },
+            %{
+              name: "log",
+              kind: :system,
+              role: "logger",
+              topic: "colony.runtime.log",
+              partition_scheme: :single
+            }
+          ]
+        })
+
+      assert [%{name: "coord"}] = Manifest.consuming_cells(manifest, "t", "mitigation.proposed")
+      assert [%{name: "spec"}] = Manifest.consuming_cells(manifest, "t", "incident.triaged")
+      assert [] = Manifest.consuming_cells(manifest, "t", "unknown.type")
+    end
+  end
+
   describe "reasoning_triggers" do
     test "defaults to empty list" do
       raw = %{
@@ -111,7 +212,8 @@ defmodule ColonyCore.ManifestTest do
             role: "r",
             topic: "t",
             partition_scheme: :single,
-            prompt: "p.md"
+            prompt: "p.md",
+            consumes: ["x.happened"]
           }
         ]
       }
@@ -129,6 +231,7 @@ defmodule ColonyCore.ManifestTest do
             topic: "t",
             partition_scheme: :single,
             prompt: "p.md",
+            consumes: ["x.happened", "y.happened"],
             reasoning_triggers: ["x.happened", "y.happened"]
           }
         ]
@@ -195,9 +298,9 @@ defmodule ColonyCore.ManifestTest do
       raw = %{
         cells: [
           %{name: "a", kind: :agent, role: "r1", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md"},
+            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]},
           %{name: "b", kind: :agent, role: "r2", topic: "shared",
-            partition_scheme: {:field, :tenant_id}, prompt: "p.md"}
+            partition_scheme: {:field, :tenant_id}, prompt: "p.md", consumes: ["x"]}
         ]
       }
 
@@ -210,9 +313,9 @@ defmodule ColonyCore.ManifestTest do
       raw = %{
         cells: [
           %{name: "a", kind: :agent, role: "r1", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md"},
+            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]},
           %{name: "b", kind: :agent, role: "r2", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md"}
+            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]}
         ]
       }
 
@@ -231,7 +334,8 @@ defmodule ColonyCore.ManifestTest do
               role: "r",
               topic: "t1",
               partition_scheme: {:field, :subject},
-              prompt: "p.md"
+              prompt: "p.md",
+              consumes: ["x"]
             },
             %{
               name: "b",
@@ -277,7 +381,7 @@ defmodule ColonyCore.ManifestTest do
         Manifest.from_raw!(%{
           cells: [
             %{name: "a", kind: :agent, role: "r", topic: "h",
-              partition_scheme: {:hash, :tenant_id}, prompt: "p.md"}
+              partition_scheme: {:hash, :tenant_id}, prompt: "p.md", consumes: ["x"]}
           ]
         })
 
@@ -301,7 +405,8 @@ defmodule ColonyCore.ManifestTest do
               role: "coordinator",
               topic: "t",
               partition_scheme: :single,
-              prompt: "p.md"
+              prompt: "p.md",
+              consumes: ["x"]
             }
           ]
         })

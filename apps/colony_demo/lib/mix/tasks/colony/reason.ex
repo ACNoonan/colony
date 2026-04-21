@@ -5,8 +5,11 @@ defmodule Mix.Tasks.Colony.Reason do
   Usage: mix colony.reason [incident_id] [options]
 
   Options:
-    --prototype <name>    Manifest cell prototype to use (default: coordinator)
-    --strategy <name>     Strategy for the first fake proposal (default: rollback)
+    --role <role>         Which role to trigger (default: coordinator).
+                          coordinator → mitigation.proposed trigger
+                          specialist  → incident.triaged trigger
+    --strategy <name>     Strategy for the fake proposal (default: rollback;
+                          only used by the coordinator path)
     --dispatch            Start a real cell, dispatch the trigger, and wait
                           for the reasoner's emits to hit Kafka. Requires
                           a running broker and valid API key. Default is
@@ -31,7 +34,7 @@ defmodule Mix.Tasks.Colony.Reason do
   alias ColonyCell.Reasoner
 
   @default_incident "incident-042"
-  @default_prototype "coordinator"
+  @default_role "coordinator"
   @default_strategy "rollback"
 
   @impl Mix.Task
@@ -39,7 +42,7 @@ defmodule Mix.Tasks.Colony.Reason do
     {opts, positional, invalid} =
       OptionParser.parse(args,
         strict: [
-          prototype: :string,
+          role: :string,
           strategy: :string,
           dispatch: :boolean,
           verbose: :boolean
@@ -52,7 +55,7 @@ defmodule Mix.Tasks.Colony.Reason do
     end
 
     incident = positional |> List.first() || @default_incident
-    prototype = Keyword.get(opts, :prototype, @default_prototype)
+    role = Keyword.get(opts, :role, @default_role)
     strategy = Keyword.get(opts, :strategy, @default_strategy)
     dispatch = Keyword.get(opts, :dispatch, false)
     verbose = Keyword.get(opts, :verbose, false)
@@ -67,18 +70,29 @@ defmodule Mix.Tasks.Colony.Reason do
     Mix.Task.run("app.start")
 
     manifest = Manifest.load()
-    cell = Manifest.fetch_cell!(manifest, prototype)
-    trigger = build_trigger(incident, strategy)
-    projections = build_projections(incident, strategy)
+    cell = fetch_cell_for_role!(manifest, role)
+    trigger = build_trigger(role, incident, strategy)
+    projections = build_projections(role, incident, strategy)
 
     Mix.shell().info("incident: #{incident}")
-    Mix.shell().info("prototype: #{prototype}  role: #{cell.role}")
-    Mix.shell().info("adapter: #{inspect(ColonyCore.LLM.adapter())}")
+    Mix.shell().info("role:     #{cell.role}  (manifest: #{cell.name})")
+    Mix.shell().info("adapter:  #{inspect(ColonyCore.LLM.adapter())}")
 
     if dispatch do
-      run_dispatch(incident, prototype, trigger, verbose)
+      run_dispatch(incident, cell, trigger, verbose)
     else
       run_plan(trigger, projections, cell, verbose)
+    end
+  end
+
+  defp fetch_cell_for_role!(manifest, role) do
+    case Enum.find(Manifest.cells(manifest), &(&1.kind == :agent and &1.role == role)) do
+      nil ->
+        Mix.shell().error("No agent cell with role #{inspect(role)} in the manifest")
+        exit({:shutdown, 1})
+
+      cell ->
+        cell
     end
   end
 
@@ -111,26 +125,30 @@ defmodule Mix.Tasks.Colony.Reason do
     end
   end
 
-  defp run_dispatch(incident, prototype, trigger, verbose) do
+  defp run_dispatch(incident, cell, trigger, verbose) do
     Mix.shell().info("mode: dispatch (live, requires kafka + api key)")
     Mix.shell().info("")
 
-    case ColonyCell.start_cell(incident, prototype: prototype) do
-      {:ok, _pid} -> :ok
-      {:error, {:already_started, _pid}} -> :ok
-      {:error, reason} ->
-        Mix.shell().error("start_cell failed: #{inspect(reason)}")
-        exit({:shutdown, 1})
-    end
+    # Start the umbrella consumer so events emitted by the triggered cell
+    # route to the next cell in the chain (e.g. specialist → coordinator).
+    ColonyDemo.ensure_topic()
+    ColonyDemo.start_consumer()
+    Process.sleep(2_000)
 
-    {:ok, status} = ColonyCell.dispatch(incident, trigger)
-    Mix.shell().info("dispatch: #{status}")
-    Mix.shell().info("waiting 15s for reasoner...")
-    Process.sleep(15_000)
+    {:ok, runtime_id} = ColonyCell.start_for(cell, incident)
+    {:ok, status} = ColonyCell.dispatch(runtime_id, trigger)
+    Mix.shell().info("dispatch → #{runtime_id}: #{status}")
+    Mix.shell().info("waiting 20s for reasoners...")
+    Process.sleep(20_000)
 
-    snap = ColonyCell.snapshot(incident)
+    print_snapshot(runtime_id, verbose)
+    print_all_cells()
+  end
+
+  defp print_snapshot(runtime_id, verbose) do
+    snap = ColonyCell.snapshot(runtime_id)
     Mix.shell().info("")
-    Mix.shell().info("snapshot:")
+    Mix.shell().info("snapshot #{runtime_id}:")
     Mix.shell().info("  handled_events:  #{snap.handled_events}")
     Mix.shell().info("  applied_actions: #{snap.applied_actions}")
     Mix.shell().info("  drift_events:    #{snap.drift_events}")
@@ -140,6 +158,18 @@ defmodule Mix.Tasks.Colony.Reason do
     if verbose do
       Mix.shell().info("  projections: #{inspect(snap.projections, pretty: true)}")
     end
+  end
+
+  defp print_all_cells do
+    entries =
+      ColonyCell.Registry
+      |> Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1"}}]}])
+      |> Enum.map(fn {cell_id} -> cell_id end)
+      |> Enum.filter(&is_binary/1)
+      |> Enum.sort()
+
+    Mix.shell().info("")
+    Mix.shell().info("all cells: #{inspect(entries)}")
   end
 
   defp maybe_print_response(_response, false), do: :ok
@@ -160,7 +190,7 @@ defmodule Mix.Tasks.Colony.Reason do
     end
   end
 
-  defp build_trigger(incident, strategy) do
+  defp build_trigger("coordinator", incident, strategy) do
     Event.new(%{
       id: "evt-proposed-#{strategy}-#{System.unique_integer([:positive])}",
       type: "mitigation.proposed",
@@ -180,7 +210,32 @@ defmodule Mix.Tasks.Colony.Reason do
     })
   end
 
-  defp build_projections(incident, strategy) do
+  defp build_trigger("specialist", incident, _strategy) do
+    Event.new(%{
+      id: "evt-triaged-#{System.unique_integer([:positive])}",
+      type: "incident.triaged",
+      source: "coordinator.triage",
+      subject: incident,
+      partition_key: incident,
+      correlation_id: "corr-#{incident}",
+      causation_id: "evt-opened-#{incident}",
+      tenant_id: "tenant-acme",
+      swarm_id: "incident-response",
+      sequence: 8,
+      data: %{
+        "severity" => "high",
+        "total_affected_endpoints" => 7,
+        "candidate_mitigations" => ["rollback", "schema_shim"]
+      }
+    })
+  end
+
+  defp build_trigger(role, _incident, _strategy) do
+    Mix.shell().error("No canned trigger for role #{inspect(role)}")
+    exit({:shutdown, 1})
+  end
+
+  defp build_projections("coordinator", incident, strategy) do
     %{
       incident => [
         %{
@@ -198,11 +253,23 @@ defmodule Mix.Tasks.Colony.Reason do
           "severity" => "high",
           "candidate_mitigations" => [strategy, "schema_shim"]
         },
-        %{
-          "type" => "incident.opened",
-          "service" => "checkout-svc"
-        }
+        %{"type" => "incident.opened", "service" => "checkout-svc"}
       ]
     }
   end
+
+  defp build_projections("specialist", incident, _strategy) do
+    %{
+      incident => [
+        %{
+          "type" => "incident.triaged",
+          "severity" => "high",
+          "candidate_mitigations" => ["rollback", "schema_shim"]
+        },
+        %{"type" => "incident.opened", "service" => "checkout-svc"}
+      ]
+    }
+  end
+
+  defp build_projections(_role, _incident, _strategy), do: %{}
 end

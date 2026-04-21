@@ -74,15 +74,25 @@ defmodule ColonyDemo do
     manifest = Manifest.load()
 
     handler = fn event ->
-      cell_id = Manifest.cell_id_for!(manifest, @event_topic, event)
-      Logger.info("[consumer] Dispatching #{event.id} (#{event.type}) → cell:#{cell_id}")
+      partition = Manifest.cell_id_for!(manifest, @event_topic, event)
+      consumers = Manifest.consuming_cells(manifest, @event_topic, event.type)
 
-      case ColonyCell.start_cell(cell_id) do
-        {:ok, _pid} -> :ok
-        {:error, {:already_started, _pid}} -> :ok
+      if consumers == [] do
+        Logger.debug("[consumer] no cells consume #{event.type}; #{event.id} ignored")
       end
 
-      ColonyCell.dispatch(cell_id, event)
+      Enum.each(consumers, fn manifest_cell ->
+        case ColonyCell.start_for(manifest_cell, partition) do
+          {:ok, runtime_id} ->
+            Logger.info("[consumer] #{event.id} (#{event.type}) → #{runtime_id}")
+            ColonyCell.dispatch(runtime_id, event)
+
+          {:error, reason} ->
+            Logger.warning("[consumer] start_for #{manifest_cell.name} failed: #{inspect(reason)}")
+        end
+      end)
+
+      :ok
     end
 
     # Unique group ID per run so the demo always starts from latest offset
@@ -153,8 +163,14 @@ defmodule ColonyDemo do
         Logger.info("Cell #{cell_id} after crash (fresh state): #{fresh.handled_events} events")
 
         # Replay the same events — idempotent cells should accept them all as new
+        partition =
+          case String.split(cell_id, ":", parts: 2) do
+            [_role, p] -> p
+            [single] -> single
+          end
+
         cell_events =
-          Enum.filter(events, fn e -> Manifest.cell_id_for!(manifest, @event_topic, e) == cell_id end)
+          Enum.filter(events, fn e -> Manifest.cell_id_for!(manifest, @event_topic, e) == partition end)
 
         Logger.info("Replaying #{length(cell_events)} events...")
 
@@ -182,12 +198,9 @@ defmodule ColonyDemo do
 
     manifest = Manifest.load()
     applied = Enum.find(events, fn e -> e.type == "mitigation.applied" end)
-    cell_id = Manifest.cell_id_for!(manifest, @event_topic, applied)
-
-    case ColonyCell.start_cell(cell_id) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-    end
+    partition = Manifest.cell_id_for!(manifest, @event_topic, applied)
+    [coordinator | _] = Manifest.consuming_cells(manifest, @event_topic, applied.type)
+    {:ok, cell_id} = ColonyCell.start_for(coordinator, partition)
 
     retry_event =
       Event.new(%{

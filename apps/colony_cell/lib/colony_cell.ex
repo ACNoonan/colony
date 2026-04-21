@@ -7,10 +7,35 @@ defmodule ColonyCell do
   """
 
   alias ColonyCell.Cell
+  alias ColonyCore.Manifest
 
   def start_cell(cell_id, opts \\ []) do
     spec = {Cell, Keyword.put(opts, :cell_id, cell_id)}
     DynamicSupervisor.start_child(supervisor_name(), spec)
+  end
+
+  @doc """
+  Start (or no-op if already running) a cell for `manifest_cell` at the
+  given partition value. The runtime id is `"<role>:<partition>"`.
+
+  Returns the runtime cell_id so callers can dispatch/snapshot by it.
+  """
+  @spec start_for(Manifest.Cell.t(), binary()) :: {:ok, binary()} | {:error, term()}
+  def start_for(%Manifest.Cell{} = manifest_cell, partition_value)
+      when is_binary(partition_value) do
+    cell_id = runtime_id(manifest_cell, partition_value)
+
+    case start_cell(cell_id, prototype: manifest_cell.name) do
+      {:ok, _pid} -> {:ok, cell_id}
+      {:error, {:already_started, _pid}} -> {:ok, cell_id}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec runtime_id(Manifest.Cell.t(), binary()) :: binary()
+  def runtime_id(%Manifest.Cell{role: role}, partition_value)
+      when is_binary(partition_value) do
+    "#{role}:#{partition_value}"
   end
 
   def dispatch(cell_id, event) do

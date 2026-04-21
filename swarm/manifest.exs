@@ -7,23 +7,8 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/coordinator.md",
+      consumes: ["incident.opened", "impact.scan.reported", "mitigation.proposed", "mitigation.applied"],
       reasoning_triggers: ["mitigation.proposed"]
-    },
-    %{
-      name: "detector.schema",
-      kind: :agent,
-      role: "detector",
-      topic: "colony.agent.events",
-      partition_scheme: {:field, :subject},
-      prompt: "roles/detector.md"
-    },
-    %{
-      name: "scanner",
-      kind: :agent,
-      role: "scanner",
-      topic: "colony.agent.events",
-      partition_scheme: {:field, :subject},
-      prompt: "roles/scanner.md"
     },
     %{
       name: "specialist",
@@ -31,7 +16,27 @@
       role: "specialist",
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
-      prompt: "roles/specialist.md"
+      prompt: "roles/specialist.md",
+      consumes: ["incident.triaged"],
+      reasoning_triggers: ["incident.triaged"]
+    },
+    %{
+      name: "detector.schema",
+      kind: :agent,
+      role: "detector",
+      topic: "colony.agent.events",
+      partition_scheme: {:field, :subject},
+      prompt: "roles/detector.md",
+      consumes: ["deployment.completed"]
+    },
+    %{
+      name: "scanner",
+      kind: :agent,
+      role: "scanner",
+      topic: "colony.agent.events",
+      partition_scheme: {:field, :subject},
+      prompt: "roles/scanner.md",
+      consumes: ["impact.scan.requested"]
     },
     %{
       name: "applier",
@@ -39,7 +44,8 @@
       role: "applier",
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
-      prompt: "roles/applier.md"
+      prompt: "roles/applier.md",
+      consumes: ["mitigation.selected"]
     },
     %{
       name: "runtime.logger",

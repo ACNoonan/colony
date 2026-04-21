@@ -21,6 +21,35 @@ defmodule ColonyCore.Tools do
         }
 
   @tools_by_role %{
+    "specialist" => [
+      %{
+        name: "propose_mitigation",
+        event_type: "mitigation.proposed",
+        description:
+          "Propose a mitigation strategy for this incident. Emit one `propose_mitigation` per viable strategy you can credibly execute. Never invent a strategy outside your specialty.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            strategy: %{
+              type: "string",
+              description:
+                "Strategy name, e.g. \"rollback\", \"schema_shim\", \"feature_flag_off\"."
+            },
+            estimated_recovery_seconds: %{
+              type: "integer",
+              description:
+                "Honest estimate of seconds from mitigation.applied to incident.resolved. Do not round down for optimism."
+            },
+            target_version: %{
+              type: "string",
+              description:
+                "For rollbacks, the service version to roll back to. Omit for non-rollback strategies."
+            }
+          },
+          required: ["strategy", "estimated_recovery_seconds"]
+        }
+      }
+    ],
     "coordinator" => [
       %{
         name: "select_mitigation",

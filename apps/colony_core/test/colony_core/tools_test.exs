@@ -11,6 +11,12 @@ defmodule ColonyCore.ToolsTest do
     assert "incident.resolved" in event_types
   end
 
+  test "specialist has a tool that produces mitigation.proposed" do
+    tools = Tools.for_role("specialist")
+    assert Enum.any?(tools, &(&1.event_type == "mitigation.proposed"))
+    assert Tools.event_type_for("specialist", "propose_mitigation") == "mitigation.proposed"
+  end
+
   test "unknown role returns empty list" do
     assert Tools.for_role("ghost") == []
   end

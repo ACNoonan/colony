@@ -36,6 +36,7 @@ defmodule ColonyCell.Cell do
     state =
       %{
         cell_id: cell_id,
+        partition_value: partition_value_from(cell_id),
         kind: Keyword.get(opts, :kind, manifest_kind(manifest_cell) || :agent),
         prototype: prototype,
         prompt_hash: prompt_hash_for(manifest_cell),
@@ -48,6 +49,17 @@ defmodule ColonyCell.Cell do
       }
 
     {:ok, state}
+  end
+
+  # A runtime cell_id may be either a bare partition value (legacy shape)
+  # or "<role>:<partition>" (multi-role shape). The partition value is what
+  # outbound events should carry as `partition_key` so they route back to
+  # the right cells.
+  defp partition_value_from(cell_id) do
+    case String.split(cell_id, ":", parts: 2) do
+      [_role, partition] -> partition
+      [single] -> single
+    end
   end
 
   @impl true
@@ -144,7 +156,7 @@ defmodule ColonyCell.Cell do
       attrs
       |> Map.put_new(:prompt_hash, state.prompt_hash)
       |> Map.put_new_lazy(:source, fn -> default_source(state) end)
-      |> Map.put_new(:partition_key, state.cell_id)
+      |> Map.put_new(:partition_key, state.partition_value)
 
     event = Event.new(attrs)
     topic = Keyword.get_lazy(opts, :topic, fn -> default_topic(state) end)
@@ -160,7 +172,9 @@ defmodule ColonyCell.Cell do
   end
 
   defp default_source(%{prototype: nil, cell_id: cell_id}), do: "cell.#{cell_id}"
-  defp default_source(%{prototype: prototype}) when is_binary(prototype), do: prototype
+  defp default_source(%{prototype: prototype, partition_value: partition}) when is_binary(prototype) do
+    "#{prototype}.#{partition}"
+  end
 
   defp default_topic(%{manifest_cell: %Manifest.Cell{topic: topic}}), do: topic
   defp default_topic(_), do: nil
