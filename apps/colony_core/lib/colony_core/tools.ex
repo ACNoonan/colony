@@ -16,6 +16,7 @@ defmodule ColonyCore.Tools do
   @type tool :: %{
           name: binary(),
           event_type: binary(),
+          action_key: binary() | nil,
           description: binary(),
           parameters: map()
         }
@@ -25,6 +26,7 @@ defmodule ColonyCore.Tools do
       %{
         name: "propose_mitigation",
         event_type: "mitigation.proposed",
+        action_key: "mitigation.proposed:{subject}:{args.strategy}",
         description:
           "Propose a mitigation strategy for this incident. Emit one `propose_mitigation` per viable strategy you can credibly execute. Never invent a strategy outside your specialty.",
         parameters: %{
@@ -54,6 +56,7 @@ defmodule ColonyCore.Tools do
       %{
         name: "select_mitigation",
         event_type: "mitigation.selected",
+        action_key: "mitigation.selected:{subject}:{correlation_id}",
         description:
           "Record the mitigation strategy chosen for this incident. Pick one of the strategies that has been proposed; do not invent new strategies.",
         parameters: %{
@@ -76,6 +79,7 @@ defmodule ColonyCore.Tools do
       %{
         name: "resolve_incident",
         event_type: "incident.resolved",
+        action_key: "incident.resolved:{subject}:{correlation_id}",
         description:
           "Mark the incident as resolved. Only emit this after a mitigation.applied event has been observed with result=ok.",
         parameters: %{

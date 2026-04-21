@@ -106,5 +106,54 @@ defmodule ColonyCell.ReasonerTest do
       # empty queue → :fixture_exhausted
       assert {:error, :fixture_exhausted} = Reasoner.plan(trigger_event(), %{}, coordinator_cell())
     end
+
+    test "planned emit attrs carry an expanded action_key" do
+      Fixture.set_fixtures([
+        %{
+          content: nil,
+          tool_calls: [
+            %{
+              id: "toolu_1",
+              name: "select_mitigation",
+              arguments: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
+            }
+          ],
+          stop_reason: :tool_use,
+          usage: %{input_tokens: 0, output_tokens: 0}
+        }
+      ])
+
+      trigger = trigger_event()
+      assert {:ok, [attrs], _resp} = Reasoner.plan(trigger, %{}, coordinator_cell())
+
+      assert attrs.action_key ==
+               "mitigation.selected:#{trigger.subject}:#{trigger.correlation_id}"
+    end
+  end
+
+  describe "expand_action_key/3" do
+    test "substitutes {subject}, {correlation_id}, {causation_id}, {args.X}" do
+      trigger = trigger_event()
+
+      assert Reasoner.expand_action_key(
+               "mitigation.proposed:{subject}:{args.strategy}",
+               trigger,
+               %{"strategy" => "rollback"}
+             ) == "mitigation.proposed:#{trigger.subject}:rollback"
+
+      assert Reasoner.expand_action_key(
+               "{correlation_id}:{causation_id}",
+               trigger,
+               %{}
+             ) == "#{trigger.correlation_id}:#{trigger.id}"
+    end
+
+    test "nil template returns nil" do
+      assert Reasoner.expand_action_key(nil, trigger_event(), %{}) == nil
+    end
+
+    test "missing args substitute as empty string" do
+      assert Reasoner.expand_action_key("a:{args.missing}:z", trigger_event(), %{}) == "a::z"
+    end
   end
 end

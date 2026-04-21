@@ -141,8 +141,21 @@ defmodule Mix.Tasks.Colony.Reason do
     Mix.shell().info("waiting 20s for reasoners...")
     Process.sleep(20_000)
 
-    print_snapshot(runtime_id, verbose)
-    print_all_cells()
+    snapshot_every_agent_cell(verbose)
+  end
+
+  defp snapshot_every_agent_cell(verbose) do
+    entries =
+      ColonyCell.Registry
+      |> Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1"}}]}])
+      |> Enum.map(fn {cell_id} -> cell_id end)
+      |> Enum.filter(&is_binary/1)
+      |> Enum.sort()
+
+    Mix.shell().info("")
+    Mix.shell().info("cells spawned during this run: #{length(entries)}")
+
+    Enum.each(entries, &print_snapshot(&1, verbose))
   end
 
   defp print_snapshot(runtime_id, verbose) do
@@ -158,18 +171,6 @@ defmodule Mix.Tasks.Colony.Reason do
     if verbose do
       Mix.shell().info("  projections: #{inspect(snap.projections, pretty: true)}")
     end
-  end
-
-  defp print_all_cells do
-    entries =
-      ColonyCell.Registry
-      |> Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1"}}]}])
-      |> Enum.map(fn {cell_id} -> cell_id end)
-      |> Enum.filter(&is_binary/1)
-      |> Enum.sort()
-
-    Mix.shell().info("")
-    Mix.shell().info("all cells: #{inspect(entries)}")
   end
 
   defp maybe_print_response(_response, false), do: :ok

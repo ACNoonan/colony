@@ -134,7 +134,7 @@ defmodule ColonyCell.Reasoner do
 
         nil
 
-      %{event_type: event_type} ->
+      %{event_type: event_type} = tool ->
         %{
           id: "evt-reasoned-#{System.unique_integer([:positive])}",
           type: event_type,
@@ -143,10 +143,32 @@ defmodule ColonyCell.Reasoner do
           causation_id: trigger.id,
           tenant_id: trigger.tenant_id,
           swarm_id: trigger.swarm_id,
-          data: stringify_keys(args)
+          data: stringify_keys(args),
+          action_key: expand_action_key(Map.get(tool, :action_key), trigger, args)
         }
     end
   end
+
+  @doc false
+  def expand_action_key(nil, _trigger, _args), do: nil
+
+  def expand_action_key(template, %Event{} = trigger, args) when is_binary(template) do
+    template
+    |> String.replace("{subject}", to_string(trigger.subject || ""))
+    |> String.replace("{correlation_id}", to_string(trigger.correlation_id || ""))
+    |> String.replace("{causation_id}", to_string(trigger.id || ""))
+    |> expand_args(args)
+  end
+
+  defp expand_args(str, args) when is_map(args) do
+    Regex.replace(~r/\{args\.([A-Za-z0-9_]+)\}/, str, fn _whole, key ->
+      args
+      |> Map.get(key, Map.get(args, String.to_atom(key), ""))
+      |> to_string()
+    end)
+  end
+
+  defp expand_args(str, _), do: str
 
   defp emit_planned(cell_id, attrs) do
     case ColonyCell.emit(cell_id, attrs) do

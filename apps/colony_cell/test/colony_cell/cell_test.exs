@@ -94,6 +94,43 @@ defmodule ColonyCell.CellTest do
     end
   end
 
+  describe "emit idempotency via action_key" do
+    test "emit dedupes when action_key already in applied_actions" do
+      cell_id = "cell-emitdup-#{System.unique_integer([:positive])}"
+      start_agent_cell(cell_id, prototype: "coordinator")
+
+      # Prime applied_actions by dispatching an event that carries
+      # the action_key we'll try to emit next.
+      primed =
+        Event.new(%{
+          id: "evt-prime-#{System.unique_integer([:positive])}",
+          type: "demo.happened",
+          source: "cell.demo",
+          subject: "thing-1",
+          data: %{},
+          correlation_id: "corr-1",
+          causation_id: "corr-1",
+          action_key: "select:thing-1"
+        })
+
+      {:ok, :accepted} = ColonyCell.dispatch(cell_id, primed)
+      assert ColonyCell.snapshot(cell_id).applied_actions == 1
+
+      # A subsequent emit with the same action_key must not hit Kafka.
+      attrs = %{
+        id: "evt-emit-#{System.unique_integer([:positive])}",
+        type: "demo.other",
+        subject: "thing-1",
+        data: %{},
+        correlation_id: "corr-1",
+        causation_id: "corr-1",
+        action_key: "select:thing-1"
+      }
+
+      assert {:ok, :duplicate_action} = ColonyCell.emit(cell_id, attrs)
+    end
+  end
+
   describe "prompt drift detection" do
     test "counts events whose prompt_hash disagrees with cell hash" do
       cell_id = "cell-drift-#{System.unique_integer([:positive])}"
@@ -143,6 +180,47 @@ defmodule ColonyCell.CellTest do
 
       {:ok, :accepted} = ColonyCell.dispatch(cell_id, stamped)
       assert ColonyCell.snapshot(cell_id).drift_events == 0
+    end
+
+    test "cross-role event does not count as drift even when hash differs" do
+      cell_id = "cell-crossrole-#{System.unique_integer([:positive])}"
+      start_agent_cell(cell_id, prototype: "coordinator")
+
+      # source starts with "specialist." → different prototype, should not warn
+      cross_role =
+        Event.new(%{
+          id: "evt-cross-1",
+          type: "demo.happened",
+          source: "specialist.incident-042",
+          subject: "thing-1",
+          data: %{},
+          correlation_id: "corr-1",
+          causation_id: "corr-1",
+          prompt_hash: String.duplicate("a", 64)
+        })
+
+      {:ok, :accepted} = ColonyCell.dispatch(cell_id, cross_role)
+      assert ColonyCell.snapshot(cell_id).drift_events == 0
+    end
+
+    test "same-role event with different hash is real drift" do
+      cell_id = "cell-samerole-#{System.unique_integer([:positive])}"
+      start_agent_cell(cell_id, prototype: "coordinator")
+
+      same_role =
+        Event.new(%{
+          id: "evt-same-1",
+          type: "demo.happened",
+          source: "coordinator.other-incident",
+          subject: "thing-1",
+          data: %{},
+          correlation_id: "corr-1",
+          causation_id: "corr-1",
+          prompt_hash: String.duplicate("a", 64)
+        })
+
+      {:ok, :accepted} = ColonyCell.dispatch(cell_id, same_role)
+      assert ColonyCell.snapshot(cell_id).drift_events == 1
     end
   end
 end

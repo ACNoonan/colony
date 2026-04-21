@@ -128,15 +128,34 @@ defmodule ColonyCell.Cell do
   defp detect_drift(%{prompt_hash: nil} = state, _event), do: state
   defp detect_drift(%{prompt_hash: current} = state, %Event{prompt_hash: current}), do: state
 
-  defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
-    Logger.warning(
-      "cell #{state.cell_id} prompt drift: event #{event_id} " <>
-        "was emitted under prompt_hash=#{truncate(dispatched_hash)} " <>
-        "but cell is on #{truncate(state.prompt_hash)}"
-    )
+  defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id} = event) do
+    if same_role_source?(event, state) do
+      Logger.warning(
+        "cell #{state.cell_id} prompt drift: event #{event_id} " <>
+          "was emitted under prompt_hash=#{truncate(dispatched_hash)} " <>
+          "but cell is on #{truncate(state.prompt_hash)}"
+      )
 
-    %{state | drift_events: state.drift_events + 1}
+      %{state | drift_events: state.drift_events + 1}
+    else
+      # Cross-role event: different hash is expected by construction.
+      state
+    end
   end
+
+  # Outbound events from ColonyCell.emit set source as "<prototype>.<partition>".
+  # Drift is only meaningful when the source's prototype matches our own —
+  # otherwise the hash mismatch is just two different roles carrying their
+  # own constitution+role prompts.
+  defp same_role_source?(%Event{source: source}, %{prototype: prototype})
+       when is_binary(source) and is_binary(prototype) do
+    case String.split(source, ".", parts: 2) do
+      [^prototype | _] -> true
+      _ -> false
+    end
+  end
+
+  defp same_role_source?(_, _), do: false
 
   defp maybe_reason(%{manifest_cell: nil}, _event), do: :ok
   defp maybe_reason(%{manifest_cell: %Manifest.Cell{kind: :system}}, _event), do: :ok
@@ -158,16 +177,36 @@ defmodule ColonyCell.Cell do
       |> Map.put_new_lazy(:source, fn -> default_source(state) end)
       |> Map.put_new(:partition_key, state.partition_value)
 
-    event = Event.new(attrs)
-    topic = Keyword.get_lazy(opts, :topic, fn -> default_topic(state) end)
+    action_key = Map.get(attrs, :action_key)
 
-    case topic do
-      nil ->
-        {{:error, :no_topic}, state}
+    cond do
+      action_key && MapSet.member?(state.applied_actions, action_key) ->
+        {{:ok, :duplicate_action}, state}
 
-      _ ->
-        result = ColonyKafka.publish(topic, event, Keyword.take(opts, [:bypass_gate]))
-        {result, state}
+      true ->
+        event = Event.new(attrs)
+        topic = Keyword.get_lazy(opts, :topic, fn -> default_topic(state) end)
+
+        case topic do
+          nil ->
+            {{:error, :no_topic}, state}
+
+          _ ->
+            case ColonyKafka.publish(topic, event, Keyword.take(opts, [:bypass_gate])) do
+              :ok ->
+                new_state =
+                  if action_key do
+                    %{state | applied_actions: MapSet.put(state.applied_actions, action_key)}
+                  else
+                    state
+                  end
+
+                {:ok, new_state}
+
+              {:error, _} = err ->
+                {err, state}
+            end
+        end
     end
   end
 
