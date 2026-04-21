@@ -25,6 +25,24 @@ defmodule ColonyCell do
     |> GenServer.call(:snapshot)
   end
 
+  @doc """
+  Emit an event from a cell.
+
+  `attrs` is a map of `ColonyCore.Event.new/1` fields. The cell auto-
+  stamps `:prompt_hash` from its loaded prototype (if any), defaults
+  `:source` to the prototype name, and uses the cell_id as
+  `:partition_key` when not set.
+
+  Default topic is the prototype's manifest topic. Pass `topic:` in opts
+  to override. Pass `bypass_gate: true` to skip the envelope gate
+  (reserved for runtime-internal emits; agent code should never use it).
+  """
+  def emit(cell_id, attrs, opts \\ []) when is_map(attrs) do
+    cell_id
+    |> via()
+    |> GenServer.call({:emit, attrs, opts})
+  end
+
   def via(cell_id) do
     {:via, Registry, {registry_name(), cell_id}}
   end

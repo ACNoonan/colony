@@ -1,14 +1,25 @@
 defmodule ColonyCell.Cell do
   use GenServer
 
+  require Logger
+
   alias ColonyCore.Event
+  alias ColonyCore.Manifest
+  alias ColonyCore.Prompt
 
   @moduledoc """
   Minimal replay-friendly cell process.
 
-  Today this is a GenServer so the repo stays dependency-light. The interface is
-  intentionally shaped so we can later swap the internals to Jido processes plus
-  Kafka consumers without rewriting the whole demo surface.
+  Today this is a GenServer so the repo stays dependency-light. The
+  interface is intentionally shaped so we can later swap the internals to
+  Jido processes without rewriting the whole demo surface.
+
+  A cell optionally carries a `:prototype` — the name of the manifest
+  entry that declares this cell's kind, role, topic, partition scheme,
+  and prompt. When a prototype is set, the cell loads and hashes the
+  layered constitution+role prompt at init. The hash is stamped on every
+  event the cell emits, and a dispatched event whose `prompt_hash`
+  disagrees with the cell's current hash is flagged as prompt drift.
   """
 
   def start_link(opts) do
@@ -18,20 +29,31 @@ defmodule ColonyCell.Cell do
 
   @impl true
   def init(opts) do
-    state = %{
-      cell_id: Keyword.fetch!(opts, :cell_id),
-      kind: Keyword.get(opts, :kind, :agent),
-      handled_events: MapSet.new(),
-      applied_actions: MapSet.new(),
-      last_sequence: 0,
-      projections: %{}
-    }
+    cell_id = Keyword.fetch!(opts, :cell_id)
+    prototype = Keyword.get(opts, :prototype)
+    manifest_cell = resolve_prototype(prototype)
+
+    state =
+      %{
+        cell_id: cell_id,
+        kind: Keyword.get(opts, :kind, manifest_kind(manifest_cell) || :agent),
+        prototype: prototype,
+        prompt_hash: prompt_hash_for(manifest_cell),
+        manifest_cell: manifest_cell,
+        handled_events: MapSet.new(),
+        applied_actions: MapSet.new(),
+        last_sequence: 0,
+        projections: %{},
+        drift_events: 0
+      }
 
     {:ok, state}
   end
 
   @impl true
   def handle_call({:dispatch, %Event{} = event}, _from, state) do
+    state = detect_drift(state, event)
+
     cond do
       MapSet.member?(state.handled_events, event.id) ->
         {:reply, {:ok, :duplicate}, state}
@@ -54,14 +76,83 @@ defmodule ColonyCell.Cell do
     snapshot = %{
       cell_id: state.cell_id,
       kind: state.kind,
+      prototype: state.prototype,
+      prompt_hash: state.prompt_hash,
       last_sequence: state.last_sequence,
       handled_events: MapSet.size(state.handled_events),
       applied_actions: MapSet.size(state.applied_actions),
+      drift_events: state.drift_events,
       projections: state.projections
     }
 
     {:reply, snapshot, state}
   end
+
+  def handle_call({:emit, attrs, opts}, _from, state) do
+    {result, state} = do_emit(state, attrs, opts)
+    {:reply, result, state}
+  end
+
+  defp resolve_prototype(nil), do: nil
+
+  defp resolve_prototype(prototype) when is_binary(prototype) do
+    manifest = Manifest.load()
+    Manifest.fetch_cell!(manifest, prototype)
+  rescue
+    e ->
+      Logger.warning("Cell prototype #{inspect(prototype)} not resolvable: #{Exception.message(e)}")
+      nil
+  end
+
+  defp manifest_kind(nil), do: nil
+  defp manifest_kind(%Manifest.Cell{kind: kind}), do: kind
+
+  defp prompt_hash_for(nil), do: nil
+  defp prompt_hash_for(%Manifest.Cell{} = cell), do: Prompt.hash_for(cell)
+
+  defp detect_drift(state, %Event{prompt_hash: nil}), do: state
+  defp detect_drift(%{prompt_hash: nil} = state, _event), do: state
+
+  defp detect_drift(%{prompt_hash: current} = state, %Event{prompt_hash: current}), do: state
+
+  defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
+    Logger.warning(
+      "cell #{state.cell_id} prompt drift: event #{event_id} " <>
+        "was emitted under prompt_hash=#{truncate(dispatched_hash)} " <>
+        "but cell is on #{truncate(state.prompt_hash)}"
+    )
+
+    %{state | drift_events: state.drift_events + 1}
+  end
+
+  defp do_emit(state, attrs, opts) do
+    attrs =
+      attrs
+      |> Map.put_new(:prompt_hash, state.prompt_hash)
+      |> Map.put_new_lazy(:source, fn -> default_source(state) end)
+      |> Map.put_new(:partition_key, state.cell_id)
+
+    event = Event.new(attrs)
+    topic = Keyword.get_lazy(opts, :topic, fn -> default_topic(state) end)
+
+    case topic do
+      nil ->
+        {{:error, :no_topic}, state}
+
+      _ ->
+        result = ColonyKafka.publish(topic, event, Keyword.take(opts, [:bypass_gate]))
+        {result, state}
+    end
+  end
+
+  defp default_source(%{prototype: nil, cell_id: cell_id}), do: "cell.#{cell_id}"
+  defp default_source(%{prototype: prototype}) when is_binary(prototype), do: prototype
+
+  defp default_topic(%{manifest_cell: %Manifest.Cell{topic: topic}}), do: topic
+  defp default_topic(_), do: nil
+
+  defp truncate(nil), do: "-"
+  defp truncate(hash) when is_binary(hash), do: String.slice(hash, 0, 12)
 
   defp record_event(state, %Event{} = event) do
     %{state | handled_events: MapSet.put(state.handled_events, event.id)}

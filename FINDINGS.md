@@ -110,6 +110,42 @@ spot-check will catch it.
   (or similar) and add unit tests around the match matrix (subject,
   partition_key, origin_subject from runtime.log envelopes).
 
+## Jido backend not yet wired (Phase 5)
+
+Phase 5 landed the plumbing — cells can carry a prototype + prompt_hash,
+`ColonyCell.emit/3` auto-stamps outbound events, dispatch detects prompt
+drift — but no agent cell yet runs an LLM. When a Jido (or other agent
+framework) integration lands, it slots into `init` where we load the
+prototype and into `emit` where we already stamp provenance.
+
+- **How to test:** add Jido as a dep, wire a minimal reasoning loop that
+  calls `ColonyCell.emit/3`, verify the event's `prompt_hash` matches the
+  snapshot's `prompt_hash` and that the gate accepts it.
+
+## Demo does not yet use prototype-aware cells (Phase 5)
+
+`ColonyDemo.start_consumer` still calls `ColonyCell.start_cell(cell_id)`
+without `:prototype`. Cells therefore don't load prompts and emitted
+events (none today) wouldn't be stamped. The plumbing works — nothing
+opts in yet.
+
+- **How to test:** design an event-type → prototype mapping (e.g.
+  `incident.*` → coordinator, `impact.scan.*` → scanner) and pass
+  `prototype: <name>` to `ColonyCell.start_cell/2` when the demo consumer
+  first spins a cell up. Then a replay of historical events after a
+  constitution change should surface non-zero `drift_events` in the
+  snapshot.
+
+## `ColonyCell.emit/3` blocks the cell on Kafka (Phase 5)
+
+`emit/3` is a `GenServer.call` that publishes inline, so a slow broker
+holds the cell call queue. Fine for demo; wrong for production-scale
+agent reasoning.
+
+- **How to test:** benchmark emit latency against a slow broker (e.g.
+  tc-netem). If latencies spike cell throughput, switch emit to `cast`
+  with a separate async publisher process or a small buffering pool.
+
 ## Commit `1a85585` missing co-author trailer
 
 Phase 1 commit omits the `Co-Authored-By: Claude Opus 4.7` trailer that
