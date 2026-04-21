@@ -6,7 +6,8 @@
       role: "coordinator",
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
-      prompt: "roles/coordinator.md"
+      prompt: "roles/coordinator.md",
+      reasoning_triggers: ["mitigation.proposed"]
     },
     %{
       name: "detector.schema",

@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down logs ps kafka-topics demo demo-story manifest tail
+.PHONY: up down logs ps kafka-topics demo demo-story manifest tail reason
 
 up:
 	$(COMPOSE) up -d
@@ -25,6 +25,9 @@ manifest:
 
 tail:
 	mix colony.tail
+
+reason:
+	mix colony.reason
 
 demo-story:
 	@printf '%s\n' \

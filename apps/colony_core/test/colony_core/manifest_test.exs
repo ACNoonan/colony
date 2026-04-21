@@ -101,6 +101,84 @@ defmodule ColonyCore.ManifestTest do
     end
   end
 
+  describe "reasoning_triggers" do
+    test "defaults to empty list" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          }
+        ]
+      }
+
+      assert [%Cell{reasoning_triggers: []}] = Manifest.from_raw!(raw).cells
+    end
+
+    test "accepts a list of event type strings" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md",
+            reasoning_triggers: ["x.happened", "y.happened"]
+          }
+        ]
+      }
+
+      assert [%Cell{reasoning_triggers: ["x.happened", "y.happened"]}] =
+               Manifest.from_raw!(raw).cells
+    end
+
+    test "rejects non-list values" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md",
+            reasoning_triggers: "x.happened"
+          }
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/reasoning_triggers must be a list/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+
+    test "rejects empty strings inside the list" do
+      raw = %{
+        cells: [
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md",
+            reasoning_triggers: ["ok", ""]
+          }
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/reasoning_triggers entries must be non-empty/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+  end
+
   describe "load/1" do
     test "loads the shipped swarm/manifest.exs" do
       manifest = Manifest.load()

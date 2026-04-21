@@ -30,20 +30,24 @@ defmodule ColonyCell.Reasoner do
   alias ColonyCore.Prompt
   alias ColonyCore.Tools
 
-  @spec reason(binary(), Event.t(), map(), Manifest.Cell.t()) :: :ok
-  def reason(cell_id, %Event{} = trigger, projections, %Manifest.Cell{} = manifest_cell) do
-    role = manifest_cell.role
-    tools = Tools.for_role(role)
+  @doc """
+  Pure reasoning: call the LLM with role-appropriate tools and return the
+  list of emit attrs the cell should publish. Side-effect-free — use this
+  for dry-run previews and testing.
+  """
+  @spec plan(Event.t(), map(), Manifest.Cell.t()) ::
+          {:ok, [map()], map()} | {:error, term()}
+  def plan(%Event{} = trigger, projections, %Manifest.Cell{} = manifest_cell) do
+    tools = Tools.for_role(manifest_cell.role)
 
     if tools == [] do
-      Logger.debug("Reasoner: no tools for role #{role}, skipping")
-      :ok
+      {:ok, [], %{content: nil, tool_calls: [], stop_reason: :end_turn, usage: %{}}}
     else
-      do_reason(cell_id, trigger, projections, manifest_cell, tools)
+      do_plan(trigger, projections, manifest_cell, tools)
     end
   end
 
-  defp do_reason(cell_id, trigger, projections, manifest_cell, tools) do
+  defp do_plan(trigger, projections, manifest_cell, tools) do
     system = Prompt.text_for(manifest_cell)
     user = build_user_content(trigger, projections)
 
@@ -53,12 +57,29 @@ defmodule ColonyCell.Reasoner do
     ]
 
     case LLM.call(messages, tools: tools) do
-      {:ok, %{tool_calls: []}} ->
+      {:ok, response} ->
+        planned = Enum.map(response.tool_calls, &tool_call_to_attrs(trigger, &1))
+        {:ok, planned, response}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Full reasoning: plan + emit each resulting event through
+  `ColonyCell.emit/3`. This is what `ColonyCell.Cell` schedules under
+  `ColonyCell.TaskSupervisor` when a reasoning trigger fires.
+  """
+  @spec reason(binary(), Event.t(), map(), Manifest.Cell.t()) :: :ok
+  def reason(cell_id, %Event{} = trigger, projections, %Manifest.Cell{} = manifest_cell) do
+    case plan(trigger, projections, manifest_cell) do
+      {:ok, [], _response} ->
         Logger.info("Reasoner: no tool calls for cell #{cell_id} on event #{trigger.id}")
         :ok
 
-      {:ok, %{tool_calls: calls}} ->
-        Enum.each(calls, &emit_tool_call(cell_id, trigger, &1))
+      {:ok, planned, _response} ->
+        Enum.each(planned, &emit_planned(cell_id, &1))
 
       {:error, reason} ->
         Logger.warning(
@@ -100,8 +121,8 @@ defmodule ColonyCell.Reasoner do
     |> Enum.join("\n")
   end
 
-  defp emit_tool_call(cell_id, %Event{} = trigger, %{name: event_type, arguments: args}) do
-    attrs = %{
+  defp tool_call_to_attrs(%Event{} = trigger, %{name: event_type, arguments: args}) do
+    %{
       id: "evt-reasoned-#{System.unique_integer([:positive])}",
       type: event_type,
       subject: trigger.subject,
@@ -111,14 +132,16 @@ defmodule ColonyCell.Reasoner do
       swarm_id: trigger.swarm_id,
       data: stringify_keys(args)
     }
+  end
 
+  defp emit_planned(cell_id, attrs) do
     case ColonyCell.emit(cell_id, attrs) do
       :ok ->
-        Logger.info("Reasoner: cell #{cell_id} emitted #{event_type}")
+        Logger.info("Reasoner: cell #{cell_id} emitted #{attrs.type}")
 
       {:error, reason} ->
         Logger.warning(
-          "Reasoner emit failed for cell #{cell_id} (#{event_type}): #{inspect(reason)}"
+          "Reasoner emit failed for cell #{cell_id} (#{attrs.type}): #{inspect(reason)}"
         )
     end
   end

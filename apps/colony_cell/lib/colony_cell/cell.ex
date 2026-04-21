@@ -120,8 +120,8 @@ defmodule ColonyCell.Cell do
   defp maybe_reason(%{manifest_cell: nil}, _event), do: :ok
   defp maybe_reason(%{manifest_cell: %Manifest.Cell{kind: :system}}, _event), do: :ok
 
-  defp maybe_reason(%{manifest_cell: %Manifest.Cell{role: role}} = state, %Event{type: type} = event) do
-    if reasoning_triggered?(role, type) do
+  defp maybe_reason(%{manifest_cell: %Manifest.Cell{} = manifest_cell} = state, %Event{type: type} = event) do
+    if type in manifest_cell.reasoning_triggers do
       Task.Supervisor.start_child(ColonyCell.TaskSupervisor, fn ->
         ColonyCell.Reasoner.reason(state.cell_id, event, state.projections, state.manifest_cell)
       end)
@@ -129,9 +129,6 @@ defmodule ColonyCell.Cell do
 
     :ok
   end
-
-  defp reasoning_triggered?("coordinator", "mitigation.proposed"), do: true
-  defp reasoning_triggered?(_role, _type), do: false
 
   defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
     Logger.warning(

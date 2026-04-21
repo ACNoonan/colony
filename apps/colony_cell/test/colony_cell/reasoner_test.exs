@@ -60,4 +60,51 @@ defmodule ColonyCell.ReasonerTest do
     # no LLM call consumed
     assert Fixture.remaining() == 0
   end
+
+  describe "plan/3 (pure, no side effects)" do
+    test "returns planned emit attrs for each tool call" do
+      Fixture.set_fixtures([
+        %{
+          content: nil,
+          tool_calls: [
+            %{
+              id: "toolu_1",
+              name: "mitigation.selected",
+              arguments: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
+            }
+          ],
+          stop_reason: :tool_use,
+          usage: %{input_tokens: 50, output_tokens: 20}
+        }
+      ])
+
+      trigger = trigger_event()
+      assert {:ok, [attrs], response} = Reasoner.plan(trigger, %{}, coordinator_cell())
+
+      assert attrs.type == "mitigation.selected"
+      assert attrs.subject == trigger.subject
+      assert attrs.causation_id == trigger.id
+      assert attrs.correlation_id == trigger.correlation_id
+      assert attrs.data["chosen"] == "rollback"
+      assert response.stop_reason == :tool_use
+    end
+
+    test "returns empty list when LLM declines to call a tool" do
+      Fixture.set_fixtures([
+        %{
+          content: "Waiting.",
+          tool_calls: [],
+          stop_reason: :end_turn,
+          usage: %{input_tokens: 30, output_tokens: 5}
+        }
+      ])
+
+      assert {:ok, [], _response} = Reasoner.plan(trigger_event(), %{}, coordinator_cell())
+    end
+
+    test "returns error on LLM failure" do
+      # empty queue → :fixture_exhausted
+      assert {:error, :fixture_exhausted} = Reasoner.plan(trigger_event(), %{}, coordinator_cell())
+    end
+  end
 end

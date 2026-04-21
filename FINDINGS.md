@@ -195,17 +195,18 @@ the first real call may surface something off.
   `ColonyCore.LLM.call([%{role: :user, content: "say hi"}], tools: [])`
   against each provider. Fix in the adapter's `parse/1`.
 
-## Reasoner demo not wired into the existing `mix demo` (Phase 6)
+## LLM adapters still untested against live APIs (Phase 6, reopened in Phase 7)
 
-The plumbing is live but nothing in the demo narrative actually spawns
-a prototype-aware cell or dispatches an event that triggers reasoning.
-You can only exercise the full loop by hand today.
+`mix colony.reason` (Phase 7) exercises the Anthropic adapter end-to-end
+in its default plan-mode (dry run). Nobody has actually run it yet, so
+the adapter's request/response shape is still theoretical.
 
-- **How to test:** add a `mix colony.reason <incident>` task that starts
-  a coordinator cell (prototype: "coordinator"), publishes a synthetic
-  `mitigation.proposed`, waits, and prints the cell's snapshot. Expect
-  `handled_events = 1` and (with valid kafka + keys) a
-  `mitigation.selected` to appear downstream.
+- **How to test:** `set -a && source .env && set +a && mix colony.reason`.
+  Expect one Anthropic call, tool-use stop reason, and a
+  `mitigation.selected` shown in the planned emits. Any parser bug in
+  `ColonyCore.LLM.Anthropic.parse/1` surfaces immediately. Same drill
+  with `COLONY_LLM_ADAPTER=openai mix colony.reason` for the OpenAI
+  adapter.
 
 ## Commit `1a85585` missing co-author trailer
 

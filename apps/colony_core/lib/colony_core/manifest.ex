@@ -38,7 +38,15 @@ defmodule ColonyCore.Manifest do
     @moduledoc false
 
     @enforce_keys [:name, :kind, :role, :topic, :partition_scheme]
-    defstruct [:name, :kind, :role, :topic, :partition_scheme, :prompt]
+    defstruct [
+      :name,
+      :kind,
+      :role,
+      :topic,
+      :partition_scheme,
+      :prompt,
+      reasoning_triggers: []
+    ]
 
     @type kind :: :agent | :system
     @type partition_scheme ::
@@ -52,7 +60,8 @@ defmodule ColonyCore.Manifest do
             role: binary(),
             topic: binary(),
             partition_scheme: partition_scheme(),
-            prompt: binary() | nil
+            prompt: binary() | nil,
+            reasoning_triggers: [binary()]
           }
   end
 
@@ -182,8 +191,29 @@ defmodule ColonyCore.Manifest do
       role: fetch_string!(m, :role),
       topic: fetch_string!(m, :topic),
       partition_scheme: Map.fetch!(m, :partition_scheme),
-      prompt: Map.get(m, :prompt)
+      prompt: Map.get(m, :prompt),
+      reasoning_triggers: fetch_triggers!(m)
     }
+  end
+
+  defp fetch_triggers!(m) do
+    case Map.get(m, :reasoning_triggers, []) do
+      list when is_list(list) ->
+        Enum.each(list, fn
+          s when is_binary(s) and byte_size(s) > 0 ->
+            :ok
+
+          other ->
+            raise ArgumentError,
+                  "reasoning_triggers entries must be non-empty strings, got: #{inspect(other)}"
+        end)
+
+        list
+
+      other ->
+        raise ArgumentError,
+              "reasoning_triggers must be a list of event type strings, got: #{inspect(other)}"
+    end
   end
 
   defp fetch_string!(m, key) do
