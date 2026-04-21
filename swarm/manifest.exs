@@ -47,6 +47,14 @@
       topic: "colony.runtime.log",
       partition_scheme: :single,
       prompt: nil
+    },
+    %{
+      name: "runtime.gate.auditor",
+      kind: :system,
+      role: "gate_auditor",
+      topic: "colony.runtime.gate.rejected",
+      partition_scheme: :single,
+      prompt: nil
     }
   ]
 }

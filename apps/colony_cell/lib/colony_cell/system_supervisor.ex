@@ -41,6 +41,10 @@ defmodule ColonyCell.SystemSupervisor do
     [Systems.Logger.child_spec_for(cell)]
   end
 
+  defp child_specs_for(%Manifest.Cell{role: "gate_auditor"} = cell) do
+    [Systems.GateAuditor.child_spec_for(cell)]
+  end
+
   defp child_specs_for(%Manifest.Cell{} = cell) do
     Logger.warning(
       "SystemSupervisor: no handler for role #{inspect(cell.role)} (cell #{inspect(cell.name)})"
