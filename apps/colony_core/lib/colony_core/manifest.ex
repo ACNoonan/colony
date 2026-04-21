@@ -101,6 +101,70 @@ defmodule ColonyCore.Manifest do
     cells |> Enum.map(& &1.topic) |> Enum.uniq()
   end
 
+  @spec cells_for_topic(t(), binary()) :: [Cell.t()]
+  def cells_for_topic(%__MODULE__{cells: cells}, topic) when is_binary(topic) do
+    Enum.filter(cells, &(&1.topic == topic))
+  end
+
+  @doc """
+  Returns the partition scheme for `topic`.
+
+  All cells on the same topic must share a scheme; this is enforced at
+  manifest load time. Raises if the topic has no declared cells.
+  """
+  @spec partition_scheme_for!(t(), binary()) :: Cell.partition_scheme()
+  def partition_scheme_for!(%__MODULE__{} = manifest, topic) when is_binary(topic) do
+    case cells_for_topic(manifest, topic) do
+      [] ->
+        raise ArgumentError, "topic #{inspect(topic)} has no declared cells"
+
+      [cell | _] ->
+        cell.partition_scheme
+    end
+  end
+
+  @doc """
+  Applies `topic`'s partition scheme to `event` and returns the routing
+  key — i.e. which cell instance should handle the event.
+
+  `event` may be a struct (`ColonyCore.Event`) or a plain map with atom
+  keys. Returns the raw value of the partition field as a binary.
+  """
+  @spec cell_id_for!(t(), binary(), struct() | map()) :: binary()
+  def cell_id_for!(%__MODULE__{} = manifest, topic, event) do
+    case partition_scheme_for!(manifest, topic) do
+      :single ->
+        topic
+
+      {:field, field} ->
+        fetch_field!(event, field, topic)
+
+      {:hash, field} ->
+        raw = fetch_field!(event, field, topic)
+        raw |> :erlang.phash2() |> Integer.to_string()
+    end
+  end
+
+  defp fetch_field!(event, field, topic) do
+    value =
+      case event do
+        %{^field => v} -> v
+        _ -> nil
+      end
+
+    case value do
+      nil ->
+        raise ArgumentError,
+              "event missing field #{inspect(field)} required by topic #{inspect(topic)} partition scheme"
+
+      v when is_binary(v) ->
+        v
+
+      other ->
+        to_string(other)
+    end
+  end
+
   @spec default_path() :: Path.t()
   def default_path do
     Path.join(swarm_dir(), "manifest.exs")
@@ -133,7 +197,25 @@ defmodule ColonyCore.Manifest do
     validate_non_empty!(cells)
     validate_unique_names!(cells)
     Enum.each(cells, &validate_cell!/1)
+    validate_scheme_consistency_per_topic!(cells)
     :ok
+  end
+
+  defp validate_scheme_consistency_per_topic!(cells) do
+    cells
+    |> Enum.group_by(& &1.topic)
+    |> Enum.each(fn {topic, cells_on_topic} ->
+      schemes = cells_on_topic |> Enum.map(& &1.partition_scheme) |> Enum.uniq()
+
+      case schemes do
+        [_single] ->
+          :ok
+
+        _multiple ->
+          raise ArgumentError,
+                "topic #{inspect(topic)} has conflicting partition schemes: #{inspect(schemes)}"
+      end
+    end)
   end
 
   defp validate_non_empty!([]), do: raise(ArgumentError, "manifest must declare at least one cell")

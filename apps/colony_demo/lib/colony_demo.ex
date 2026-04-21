@@ -18,6 +18,7 @@ defmodule ColonyDemo do
   require Logger
 
   alias ColonyCore.Event
+  alias ColonyCore.Manifest
   alias ColonyCell
 
   @event_topic Application.compile_env(:colony_demo, :event_topic, "colony.agent.events")
@@ -70,8 +71,10 @@ defmodule ColonyDemo do
   end
 
   def start_consumer do
+    manifest = Manifest.load()
+
     handler = fn event ->
-      cell_id = event.partition_key || event.subject
+      cell_id = Manifest.cell_id_for!(manifest, @event_topic, event)
       Logger.info("[consumer] Dispatching #{event.id} (#{event.type}) → cell:#{cell_id}")
 
       case ColonyCell.start_cell(cell_id) do
@@ -104,7 +107,8 @@ defmodule ColonyDemo do
     for {cell_id, _pid, _} <-
           Registry.select(ColonyCell.Registry, [
             {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
-          ]) do
+          ]),
+        is_binary(cell_id) do
       snapshot = ColonyCell.snapshot(cell_id)
 
       Logger.info(
@@ -118,7 +122,14 @@ defmodule ColonyDemo do
   def simulate_crash_and_replay(events) do
     Logger.info("=== Simulating Cell Crash ===")
 
-    case Registry.select(ColonyCell.Registry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}]) do
+    manifest = Manifest.load()
+
+    agent_entries =
+      ColonyCell.Registry
+      |> Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}])
+      |> Enum.filter(fn {cell_id, _pid} -> is_binary(cell_id) end)
+
+    case agent_entries do
       [{cell_id, pid} | _] ->
         before = ColonyCell.snapshot(cell_id)
 
@@ -142,7 +153,9 @@ defmodule ColonyDemo do
         Logger.info("Cell #{cell_id} after crash (fresh state): #{fresh.handled_events} events")
 
         # Replay the same events — idempotent cells should accept them all as new
-        cell_events = Enum.filter(events, fn e -> (e.partition_key || e.subject) == cell_id end)
+        cell_events =
+          Enum.filter(events, fn e -> Manifest.cell_id_for!(manifest, @event_topic, e) == cell_id end)
+
         Logger.info("Replaying #{length(cell_events)} events...")
 
         Enum.each(cell_events, fn event ->
@@ -167,8 +180,9 @@ defmodule ColonyDemo do
   def demonstrate_action_dedup(events) do
     Logger.info("=== Action-Level Idempotency ===")
 
+    manifest = Manifest.load()
     applied = Enum.find(events, fn e -> e.type == "mitigation.applied" end)
-    cell_id = applied.partition_key || applied.subject
+    cell_id = Manifest.cell_id_for!(manifest, @event_topic, applied)
 
     case ColonyCell.start_cell(cell_id) do
       {:ok, _} -> :ok

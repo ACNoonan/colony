@@ -112,6 +112,106 @@ defmodule ColonyCore.ManifestTest do
     end
   end
 
+  describe "conflicting partition schemes on the same topic" do
+    test "rejects manifests that disagree" do
+      raw = %{
+        cells: [
+          %{name: "a", kind: :agent, role: "r1", topic: "shared",
+            partition_scheme: {:field, :subject}, prompt: "p.md"},
+          %{name: "b", kind: :agent, role: "r2", topic: "shared",
+            partition_scheme: {:field, :tenant_id}, prompt: "p.md"}
+        ]
+      }
+
+      assert_raise ArgumentError, ~r/conflicting partition schemes/, fn ->
+        Manifest.from_raw!(raw)
+      end
+    end
+
+    test "accepts identical schemes across multiple cells on a topic" do
+      raw = %{
+        cells: [
+          %{name: "a", kind: :agent, role: "r1", topic: "shared",
+            partition_scheme: {:field, :subject}, prompt: "p.md"},
+          %{name: "b", kind: :agent, role: "r2", topic: "shared",
+            partition_scheme: {:field, :subject}, prompt: "p.md"}
+        ]
+      }
+
+      assert %Manifest{cells: [_, _]} = Manifest.from_raw!(raw)
+    end
+  end
+
+  describe "partition_scheme_for!/2 and cell_id_for!/3" do
+    setup do
+      manifest =
+        Manifest.from_raw!(%{
+          cells: [
+            %{
+              name: "a",
+              kind: :agent,
+              role: "r",
+              topic: "t1",
+              partition_scheme: {:field, :subject},
+              prompt: "p.md"
+            },
+            %{
+              name: "b",
+              kind: :system,
+              role: "logger",
+              topic: "t2",
+              partition_scheme: :single,
+              prompt: nil
+            }
+          ]
+        })
+
+      {:ok, manifest: manifest}
+    end
+
+    test "returns the scheme for a known topic", %{manifest: manifest} do
+      assert Manifest.partition_scheme_for!(manifest, "t1") == {:field, :subject}
+      assert Manifest.partition_scheme_for!(manifest, "t2") == :single
+    end
+
+    test "raises for an unknown topic", %{manifest: manifest} do
+      assert_raise ArgumentError, ~r/no declared cells/, fn ->
+        Manifest.partition_scheme_for!(manifest, "ghost")
+      end
+    end
+
+    test "routes by {:field, f}", %{manifest: manifest} do
+      assert Manifest.cell_id_for!(manifest, "t1", %{subject: "incident-42"}) == "incident-42"
+    end
+
+    test "routes :single to the topic name", %{manifest: manifest} do
+      assert Manifest.cell_id_for!(manifest, "t2", %{subject: "anything"}) == "t2"
+    end
+
+    test "raises when the partition field is missing", %{manifest: manifest} do
+      assert_raise ArgumentError, ~r/event missing field :subject/, fn ->
+        Manifest.cell_id_for!(manifest, "t1", %{})
+      end
+    end
+
+    test "routes {:hash, f} to a deterministic string" do
+      manifest =
+        Manifest.from_raw!(%{
+          cells: [
+            %{name: "a", kind: :agent, role: "r", topic: "h",
+              partition_scheme: {:hash, :tenant_id}, prompt: "p.md"}
+          ]
+        })
+
+      id_a = Manifest.cell_id_for!(manifest, "h", %{tenant_id: "tenant-1"})
+      id_b = Manifest.cell_id_for!(manifest, "h", %{tenant_id: "tenant-1"})
+      id_c = Manifest.cell_id_for!(manifest, "h", %{tenant_id: "tenant-2"})
+
+      assert id_a == id_b
+      refute id_a == id_c
+    end
+  end
+
   describe "fetch_cell!/2" do
     setup do
       manifest =

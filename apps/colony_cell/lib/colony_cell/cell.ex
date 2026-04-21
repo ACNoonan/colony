@@ -20,6 +20,7 @@ defmodule ColonyCell.Cell do
   def init(opts) do
     state = %{
       cell_id: Keyword.fetch!(opts, :cell_id),
+      kind: Keyword.get(opts, :kind, :agent),
       handled_events: MapSet.new(),
       applied_actions: MapSet.new(),
       last_sequence: 0,
@@ -52,6 +53,7 @@ defmodule ColonyCell.Cell do
   def handle_call(:snapshot, _from, state) do
     snapshot = %{
       cell_id: state.cell_id,
+      kind: state.kind,
       last_sequence: state.last_sequence,
       handled_events: MapSet.size(state.handled_events),
       applied_actions: MapSet.size(state.applied_actions),

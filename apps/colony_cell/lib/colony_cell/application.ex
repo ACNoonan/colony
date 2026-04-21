@@ -5,7 +5,8 @@ defmodule ColonyCell.Application do
   def start(_type, _args) do
     children = [
       {Registry, keys: :unique, name: registry_name()},
-      {DynamicSupervisor, strategy: :one_for_one, name: supervisor_name()}
+      {DynamicSupervisor, strategy: :one_for_one, name: supervisor_name()},
+      ColonyCell.SystemSupervisor
     ]
 
     Supervisor.start_link(children, strategy: :one_for_all, name: __MODULE__.Supervisor)

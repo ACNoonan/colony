@@ -24,7 +24,8 @@ defmodule ColonyCell.MixProject do
 
   defp deps do
     [
-      {:colony_core, in_umbrella: true}
+      {:colony_core, in_umbrella: true},
+      {:colony_kafka, in_umbrella: true}
     ]
   end
 end
