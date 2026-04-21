@@ -23,7 +23,8 @@ defmodule ColonyCore.Event do
     :sequence,
     :schema_version,
     :recorded_at,
-    :traceparent
+    :traceparent,
+    :prompt_hash
   ]
 
   @required ~w(id type source subject data correlation_id causation_id)a
@@ -44,7 +45,8 @@ defmodule ColonyCore.Event do
           sequence: non_neg_integer() | nil,
           schema_version: pos_integer() | nil,
           recorded_at: DateTime.t() | nil,
-          traceparent: binary() | nil
+          traceparent: binary() | nil,
+          prompt_hash: binary() | nil
         }
 
   def new(attrs) when is_list(attrs) do

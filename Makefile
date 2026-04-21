@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down logs ps kafka-topics demo-story
+.PHONY: up down logs ps kafka-topics demo demo-story manifest
 
 up:
 	$(COMPOSE) up -d
@@ -19,6 +19,9 @@ kafka-topics:
 
 demo:
 	mix run -e "ColonyDemo.run()"
+
+manifest:
+	mix colony.manifest
 
 demo-story:
 	@printf '%s\n' \
