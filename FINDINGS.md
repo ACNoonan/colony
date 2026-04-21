@@ -88,6 +88,28 @@ to look at the warnings.
   during a demo run. If nothing shows up after a week of runs, flip to
   `:enforce` in config. If things show up, fix them first.
 
+## `mix colony.tail` has no `--role` filter (Phase 4)
+
+Resolving `event.source` (e.g. `"specialist.rollback"`) to a manifest
+`role` requires a source→role map that doesn't exist yet. The cell filter
+covers the common case (one cell, one incident) but not "show me every
+event any specialist ever emitted."
+
+- **How to test:** demo run, `mix colony.tail --role specialist` — today
+  this errors on unknown option. Fix is either a naming convention
+  (`<role>.<instance>`) enforced in the constitution, or a `source_prefix`
+  field on manifest cells.
+
+## `mix colony.tail` filter logic is untested (Phase 4)
+
+`passes?/2` and `cell_match?/2` are private and tested only by running the
+task against real Kafka. If we regress filter behavior, only a human
+spot-check will catch it.
+
+- **How to test:** extract filters into `Mix.Tasks.Colony.Tail.Filters`
+  (or similar) and add unit tests around the match matrix (subject,
+  partition_key, origin_subject from runtime.log envelopes).
+
 ## Commit `1a85585` missing co-author trailer
 
 Phase 1 commit omits the `Co-Authored-By: Claude Opus 4.7` trailer that
