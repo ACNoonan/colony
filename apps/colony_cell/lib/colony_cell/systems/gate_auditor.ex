@@ -54,6 +54,10 @@ defmodule ColonyCell.Systems.GateAuditor do
         Logger.info("gate.auditor subscribed to #{state.topic}")
         {:noreply, %{state | subscriber: pid}}
 
+      {:error, :kafka_adapter_not_configured} ->
+        Logger.debug("gate.auditor subscribe skipped: kafka adapter disabled")
+        {:noreply, state}
+
       {:error, reason} ->
         Logger.warning("gate.auditor subscribe failed: #{inspect(reason)}")
         {:noreply, state}

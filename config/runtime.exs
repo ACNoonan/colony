@@ -1,8 +1,38 @@
 import Config
 
 # Runtime configuration — evaluated at application start, so env vars
-# reflect the shell that launched the BEAM (or whatever `source .env`
-# step the operator ran first).
+# reflect the shell that launched the BEAM (plus anything we load
+# below). .env is auto-loaded if present; explicit shell env vars win.
+
+env_file = Path.expand("../.env", __DIR__)
+
+if File.exists?(env_file) do
+  env_file
+  |> File.read!()
+  |> String.split("\n", trim: true)
+  |> Enum.each(fn line ->
+    line = String.trim(line)
+
+    cond do
+      line == "" ->
+        :skip
+
+      String.starts_with?(line, "#") ->
+        :skip
+
+      true ->
+        case String.split(line, "=", parts: 2) do
+          [key, val] ->
+            key = String.trim(key)
+            val = val |> String.trim() |> String.trim("\"") |> String.trim("'")
+            if System.get_env(key) == nil, do: System.put_env(key, val)
+
+          _ ->
+            :skip
+        end
+    end
+  end)
+end
 
 config :colony_core, :llm_anthropic,
   api_key: System.get_env("ANTHROPIC_API_KEY"),

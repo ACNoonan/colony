@@ -176,6 +176,7 @@ defmodule ColonyCell.Cell do
       |> Map.put_new(:prompt_hash, state.prompt_hash)
       |> Map.put_new_lazy(:source, fn -> default_source(state) end)
       |> Map.put_new(:partition_key, state.partition_value)
+      |> Map.put_new_lazy(:sequence, fn -> state.last_sequence + 1 end)
 
     action_key = Map.get(attrs, :action_key)
 
@@ -195,11 +196,9 @@ defmodule ColonyCell.Cell do
             case ColonyKafka.publish(topic, event, Keyword.take(opts, [:bypass_gate])) do
               :ok ->
                 new_state =
-                  if action_key do
-                    %{state | applied_actions: MapSet.put(state.applied_actions, action_key)}
-                  else
-                    state
-                  end
+                  state
+                  |> update_last_sequence(event.sequence)
+                  |> maybe_remember_action(action_key)
 
                 {:ok, new_state}
 
@@ -208,6 +207,18 @@ defmodule ColonyCell.Cell do
             end
         end
     end
+  end
+
+  defp update_last_sequence(state, nil), do: state
+
+  defp update_last_sequence(state, seq) when is_integer(seq) do
+    %{state | last_sequence: max(state.last_sequence, seq)}
+  end
+
+  defp maybe_remember_action(state, nil), do: state
+
+  defp maybe_remember_action(state, action_key) do
+    %{state | applied_actions: MapSet.put(state.applied_actions, action_key)}
   end
 
   defp default_source(%{prototype: nil, cell_id: cell_id}), do: "cell.#{cell_id}"

@@ -45,6 +45,10 @@ defmodule ColonyCell.Systems.Logger do
         Logger.info("system.logger subscribed to #{state.agent_topic}")
         {:noreply, %{state | subscriber: pid}}
 
+      {:error, :kafka_adapter_not_configured} ->
+        Logger.debug("system.logger subscribe skipped: kafka adapter disabled")
+        {:noreply, state}
+
       {:error, reason} ->
         Logger.warning("system.logger subscribe failed: #{inspect(reason)}")
         {:noreply, state}
