@@ -175,6 +175,12 @@ defmodule ColonyCell.Reasoner do
       :ok ->
         Logger.info("Reasoner: cell #{cell_id} emitted #{attrs.type}")
 
+      {:ok, :duplicate_action} ->
+        Logger.info(
+          "Reasoner: cell #{cell_id} skipped duplicate #{attrs.type} " <>
+            "(action_key=#{attrs[:action_key]})"
+        )
+
       {:error, reason} ->
         Logger.warning(
           "Reasoner emit failed for cell #{cell_id} (#{attrs.type}): #{inspect(reason)}"
