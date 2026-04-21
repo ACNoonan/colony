@@ -62,7 +62,7 @@ defmodule ColonyCell.Systems.Logger do
   end
 
   defp handle_event(%Event{} = event, state) do
-    summary = summary_event(event)
+    summary = summary_event(event, state.log_topic)
 
     case ColonyKafka.publish(state.log_topic, summary) do
       :ok ->
@@ -74,13 +74,13 @@ defmodule ColonyCell.Systems.Logger do
     end
   end
 
-  defp summary_event(%Event{} = origin) do
+  defp summary_event(%Event{} = origin, log_topic) do
     Event.new(%{
       id: "evt-log-#{System.unique_integer([:positive])}",
       type: "runtime.logged",
       source: @source,
       subject: origin.id,
-      partition_key: "logger",
+      partition_key: log_topic,
       correlation_id: origin.correlation_id,
       causation_id: origin.id,
       tenant_id: origin.tenant_id,

@@ -14,9 +14,9 @@ config :colony_core, :llm_openai,
 
 llm_adapter =
   case System.get_env("COLONY_LLM_ADAPTER") do
-    "openai" -> ColonyCore.LLM.OpenAI
+    "anthropic" -> ColonyCore.LLM.Anthropic
     "fixture" -> ColonyCore.LLM.Fixture
-    _ -> ColonyCore.LLM.Anthropic
+    _ -> ColonyCore.LLM.OpenAI
   end
 
 config :colony_core, llm_adapter: llm_adapter
