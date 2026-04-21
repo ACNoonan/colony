@@ -8,6 +8,9 @@ defmodule Mix.Tasks.Colony.Tail do
     --topic <t>            Topic to tail (default: colony.runtime.log)
     --cell <name>          Only show events whose subject, partition_key,
                            or origin_subject equals <name>
+    --role <role>          Only show events whose source (or origin_source
+                           in runtime.log envelopes) has <role> as its
+                           leading "<role>.<partition>" prefix
     --correlation <id>     Only show events in one correlation chain
     --since earliest|latest
                            Start offset (default: latest)
@@ -21,6 +24,7 @@ defmodule Mix.Tasks.Colony.Tail do
   use Mix.Task
 
   alias ColonyCore.Event
+  alias Mix.Tasks.Colony.Tail.Filters
 
   @default_topic "colony.runtime.log"
   @palette [31, 32, 33, 34, 35, 36, 91, 92, 93, 94, 95, 96]
@@ -34,11 +38,12 @@ defmodule Mix.Tasks.Colony.Tail do
         strict: [
           topic: :string,
           cell: :string,
+          role: :string,
           correlation: :string,
           since: :string,
           no_color: :boolean
         ],
-        aliases: [t: :topic, c: :cell]
+        aliases: [t: :topic, c: :cell, r: :role]
       )
 
     if invalid != [] do
@@ -49,14 +54,14 @@ defmodule Mix.Tasks.Colony.Tail do
     topic = Keyword.get(opts, :topic, @default_topic)
     color? = !Keyword.get(opts, :no_color, false)
     begin_offset = parse_since(Keyword.get(opts, :since, "latest"))
-    filters = build_filters(opts)
+    filters = Filters.build(opts)
 
     Mix.shell().info(
-      "tail: #{topic} (offset=#{begin_offset}, filters=#{format_filters(filters)}) — Ctrl-C to stop"
+      "tail: #{topic} (offset=#{begin_offset}, filters=#{Filters.format(filters)}) — Ctrl-C to stop"
     )
 
     handler = fn %Event{} = event ->
-      if passes?(event, filters), do: print_event(event, color?)
+      if Filters.passes?(event, filters), do: print_event(event, color?)
       :ok
     end
 
@@ -80,44 +85,6 @@ defmodule Mix.Tasks.Colony.Tail do
   defp parse_since(other) do
     Mix.shell().error("--since must be 'earliest' or 'latest' (got #{inspect(other)})")
     exit({:shutdown, 1})
-  end
-
-  defp build_filters(opts) do
-    [
-      cell: Keyword.get(opts, :cell),
-      correlation: Keyword.get(opts, :correlation)
-    ]
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-  end
-
-  defp format_filters([]), do: "none"
-
-  defp format_filters(filters) do
-    filters
-    |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
-    |> Enum.join(",")
-  end
-
-  defp passes?(_event, []), do: true
-
-  defp passes?(%Event{} = event, filters) do
-    Enum.all?(filters, fn
-      {:cell, name} -> cell_match?(event, name)
-      {:correlation, id} -> event.correlation_id == id
-    end)
-  end
-
-  defp cell_match?(%Event{} = event, name) do
-    candidates =
-      [
-        event.subject,
-        event.partition_key,
-        get_in(event.data, ["origin_subject"]),
-        get_in(event.data, ["origin_partition_key"])
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    Enum.any?(candidates, &(&1 == name))
   end
 
   defp print_event(%Event{type: "runtime.logged"} = event, color?) do

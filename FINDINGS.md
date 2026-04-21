@@ -81,27 +81,15 @@ to look at the warnings.
   during a demo run. If nothing shows up after a week of runs, flip to
   `:enforce` in config. If things show up, fix them first.
 
-## `mix colony.tail` has no `--role` filter (Phase 4)
+## `mix colony.tail` role filter + filter tests (closed 2026-04-22)
 
-Resolving `event.source` (e.g. `"specialist.incident-042"`) to a manifest
-role requires a source→role map. The cell filter covers the common case
-(one cell, one incident) but not "show me every event any specialist ever
-emitted." With Phase 5's source convention (`<prototype>.<partition>`),
-the prefix IS the prototype name — easy to add now.
-
-- **How to test:** demo run, `mix colony.tail --role specialist` — today
-  this errors on unknown option. Fix is a 5-line extension in
-  `passes?/2` that splits `event.source` on `.` and compares the prefix.
-
-## `mix colony.tail` filter logic is untested (Phase 4)
-
-`passes?/2` and `cell_match?/2` are private and tested only by running the
-task against real Kafka. If we regress filter behavior, only a human
-spot-check will catch it.
-
-- **How to test:** extract filters into `Mix.Tasks.Colony.Tail.Filters`
-  (or similar) and add unit tests around the match matrix (subject,
-  partition_key, origin_subject from runtime.log envelopes).
+Filters extracted into `Mix.Tasks.Colony.Tail.Filters` with unit tests
+over the match matrix (subject/partition_key/origin_subject for cell,
+source prefix/origin_source prefix for role, correlation exact match,
+composite conjunction). Role matching keys off the `<role>.<partition>`
+source convention — now grounded in `manifest_cell.role` via
+`ColonyCell.Cell.default_source`, so the filter works for both
+scripted and reasoner-emitted events.
 
 ## `ColonyCell.emit/3` blocks the cell on Kafka (Phase 5)
 

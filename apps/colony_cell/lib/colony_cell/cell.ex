@@ -221,7 +221,13 @@ defmodule ColonyCell.Cell do
     %{state | applied_actions: MapSet.put(state.applied_actions, action_key)}
   end
 
+  defp default_source(%{manifest_cell: %Manifest.Cell{role: role}, partition_value: partition})
+       when is_binary(role) do
+    "#{role}.#{partition}"
+  end
+
   defp default_source(%{prototype: nil, cell_id: cell_id}), do: "cell.#{cell_id}"
+
   defp default_source(%{prototype: prototype, partition_value: partition}) when is_binary(prototype) do
     "#{prototype}.#{partition}"
   end
