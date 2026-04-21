@@ -58,7 +58,11 @@ defmodule ColonyCell.Reasoner do
 
     case LLM.call(messages, tools: tools) do
       {:ok, response} ->
-        planned = Enum.map(response.tool_calls, &tool_call_to_attrs(trigger, &1))
+        planned =
+          response.tool_calls
+          |> Enum.map(&tool_call_to_attrs(trigger, tools, &1))
+          |> Enum.reject(&is_nil/1)
+
         {:ok, planned, response}
 
       {:error, reason} ->
@@ -121,17 +125,27 @@ defmodule ColonyCell.Reasoner do
     |> Enum.join("\n")
   end
 
-  defp tool_call_to_attrs(%Event{} = trigger, %{name: event_type, arguments: args}) do
-    %{
-      id: "evt-reasoned-#{System.unique_integer([:positive])}",
-      type: event_type,
-      subject: trigger.subject,
-      correlation_id: trigger.correlation_id,
-      causation_id: trigger.id,
-      tenant_id: trigger.tenant_id,
-      swarm_id: trigger.swarm_id,
-      data: stringify_keys(args)
-    }
+  defp tool_call_to_attrs(%Event{} = trigger, tools, %{name: tool_name, arguments: args}) do
+    case Enum.find(tools, &(&1.name == tool_name)) do
+      nil ->
+        Logger.warning(
+          "Reasoner: LLM returned unknown tool name #{inspect(tool_name)}; skipping"
+        )
+
+        nil
+
+      %{event_type: event_type} ->
+        %{
+          id: "evt-reasoned-#{System.unique_integer([:positive])}",
+          type: event_type,
+          subject: trigger.subject,
+          correlation_id: trigger.correlation_id,
+          causation_id: trigger.id,
+          tenant_id: trigger.tenant_id,
+          swarm_id: trigger.swarm_id,
+          data: stringify_keys(args)
+        }
+    end
   end
 
   defp emit_planned(cell_id, attrs) do

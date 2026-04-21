@@ -114,8 +114,17 @@ defmodule ColonyCell.Cell do
 
   defp detect_drift(state, %Event{prompt_hash: nil}), do: state
   defp detect_drift(%{prompt_hash: nil} = state, _event), do: state
-
   defp detect_drift(%{prompt_hash: current} = state, %Event{prompt_hash: current}), do: state
+
+  defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
+    Logger.warning(
+      "cell #{state.cell_id} prompt drift: event #{event_id} " <>
+        "was emitted under prompt_hash=#{truncate(dispatched_hash)} " <>
+        "but cell is on #{truncate(state.prompt_hash)}"
+    )
+
+    %{state | drift_events: state.drift_events + 1}
+  end
 
   defp maybe_reason(%{manifest_cell: nil}, _event), do: :ok
   defp maybe_reason(%{manifest_cell: %Manifest.Cell{kind: :system}}, _event), do: :ok
@@ -128,16 +137,6 @@ defmodule ColonyCell.Cell do
     end
 
     :ok
-  end
-
-  defp detect_drift(state, %Event{prompt_hash: dispatched_hash, id: event_id}) do
-    Logger.warning(
-      "cell #{state.cell_id} prompt drift: event #{event_id} " <>
-        "was emitted under prompt_hash=#{truncate(dispatched_hash)} " <>
-        "but cell is on #{truncate(state.prompt_hash)}"
-    )
-
-    %{state | drift_events: state.drift_events + 1}
   end
 
   defp do_emit(state, attrs, opts) do

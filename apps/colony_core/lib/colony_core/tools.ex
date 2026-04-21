@@ -15,6 +15,7 @@ defmodule ColonyCore.Tools do
 
   @type tool :: %{
           name: binary(),
+          event_type: binary(),
           description: binary(),
           parameters: map()
         }
@@ -22,7 +23,8 @@ defmodule ColonyCore.Tools do
   @tools_by_role %{
     "coordinator" => [
       %{
-        name: "mitigation.selected",
+        name: "select_mitigation",
+        event_type: "mitigation.selected",
         description:
           "Record the mitigation strategy chosen for this incident. Pick one of the strategies that has been proposed; do not invent new strategies.",
         parameters: %{
@@ -43,7 +45,8 @@ defmodule ColonyCore.Tools do
         }
       },
       %{
-        name: "incident.resolved",
+        name: "resolve_incident",
+        event_type: "incident.resolved",
         description:
           "Mark the incident as resolved. Only emit this after a mitigation.applied event has been observed with result=ok.",
         parameters: %{
@@ -72,6 +75,18 @@ defmodule ColonyCore.Tools do
 
   @spec known?(binary(), binary()) :: boolean()
   def known?(role, event_type) do
-    for_role(role) |> Enum.any?(&(&1.name == event_type))
+    for_role(role) |> Enum.any?(&(&1.event_type == event_type))
+  end
+
+  @doc """
+  Map a tool name (LLM-facing slug) back to the event type it produces.
+  Returns `nil` if the tool isn't declared for the role.
+  """
+  @spec event_type_for(binary(), binary()) :: binary() | nil
+  def event_type_for(role, tool_name) when is_binary(role) and is_binary(tool_name) do
+    case Enum.find(for_role(role), &(&1.name == tool_name)) do
+      nil -> nil
+      %{event_type: et} -> et
+    end
   end
 end

@@ -36,8 +36,6 @@ defmodule Mix.Tasks.Colony.Reason do
 
   @impl Mix.Task
   def run(args) do
-    Mix.Task.run("app.start")
-
     {opts, positional, invalid} =
       OptionParser.parse(args,
         strict: [
@@ -58,6 +56,15 @@ defmodule Mix.Tasks.Colony.Reason do
     strategy = Keyword.get(opts, :strategy, @default_strategy)
     dispatch = Keyword.get(opts, :dispatch, false)
     verbose = Keyword.get(opts, :verbose, false)
+
+    # Plan-mode never touches Kafka. Set the env var that runtime.exs
+    # reads to override the adapter to Unconfigured, so brod doesn't spin
+    # up and spam connection refused during app.start.
+    unless dispatch do
+      System.put_env("COLONY_DISABLE_KAFKA", "1")
+    end
+
+    Mix.Task.run("app.start")
 
     manifest = Manifest.load()
     cell = Manifest.fetch_cell!(manifest, prototype)

@@ -3,28 +3,43 @@ defmodule ColonyCore.ToolsTest do
 
   alias ColonyCore.Tools
 
-  test "coordinator has at least mitigation.selected and incident.resolved" do
+  test "coordinator has tools that produce mitigation.selected and incident.resolved" do
     tools = Tools.for_role("coordinator")
-    names = Enum.map(tools, & &1.name)
+    event_types = Enum.map(tools, & &1.event_type)
 
-    assert "mitigation.selected" in names
-    assert "incident.resolved" in names
+    assert "mitigation.selected" in event_types
+    assert "incident.resolved" in event_types
   end
 
   test "unknown role returns empty list" do
     assert Tools.for_role("ghost") == []
   end
 
-  test "known?/2 reflects the registry" do
+  test "known?/2 checks event types, not tool names" do
     assert Tools.known?("coordinator", "mitigation.selected")
     refute Tools.known?("coordinator", "deploy.completed")
     refute Tools.known?("ghost", "anything")
   end
 
-  test "each tool has name/description/parameters with required fields" do
+  test "event_type_for/2 maps tool slug to emitted event type" do
+    assert Tools.event_type_for("coordinator", "select_mitigation") == "mitigation.selected"
+    assert Tools.event_type_for("coordinator", "resolve_incident") == "incident.resolved"
+    assert Tools.event_type_for("coordinator", "unknown_tool") == nil
+  end
+
+  test "every tool name matches provider regex (no dots)" do
+    for role <- Tools.roles(),
+        tool <- Tools.for_role(role) do
+      assert tool.name =~ ~r/^[a-zA-Z0-9_-]{1,128}$/,
+             "tool #{inspect(tool.name)} for role #{role} breaks provider naming pattern"
+    end
+  end
+
+  test "each tool has name/event_type/description/parameters" do
     for role <- Tools.roles(),
         tool <- Tools.for_role(role) do
       assert is_binary(tool.name) and tool.name != ""
+      assert is_binary(tool.event_type) and tool.event_type != ""
       assert is_binary(tool.description) and tool.description != ""
       assert is_map(tool.parameters)
       assert tool.parameters.type == "object"

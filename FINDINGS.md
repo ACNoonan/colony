@@ -195,18 +195,26 @@ the first real call may surface something off.
   `ColonyCore.LLM.call([%{role: :user, content: "say hi"}], tools: [])`
   against each provider. Fix in the adapter's `parse/1`.
 
-## LLM adapters still untested against live APIs (Phase 6, reopened in Phase 7)
+## LLM adapters validated against live APIs (closed 2026-04-21)
 
-`mix colony.reason` (Phase 7) exercises the Anthropic adapter end-to-end
-in its default plan-mode (dry run). Nobody has actually run it yet, so
-the adapter's request/response shape is still theoretical.
+Anthropic adapter: one live call, `stop_reason=tool_use`, parser produced
+a clean `mitigation.selected` emit with `chosen=rollback,
+reason=fastest_recovery`. OpenAI adapter: same result, same shape.
+Tool name rename (dotted → slug, `select_mitigation` in the Tools
+registry) was needed for both providers since neither allows `.` in
+tool names; the Reasoner maps slug back to dotted event type at emit
+time via `ColonyCore.Tools.event_type_for/2`.
 
-- **How to test:** `set -a && source .env && set +a && mix colony.reason`.
-  Expect one Anthropic call, tool-use stop reason, and a
-  `mitigation.selected` shown in the planned emits. Any parser bug in
-  `ColonyCore.LLM.Anthropic.parse/1` surfaces immediately. Same drill
-  with `COLONY_LLM_ADAPTER=openai mix colony.reason` for the OpenAI
-  adapter.
+## Plan-mode still emits two subscribe-failed warnings (Phase 7)
+
+With `COLONY_DISABLE_KAFKA=1`, system cells still start and try to
+subscribe; the Unconfigured adapter returns `:kafka_adapter_not_configured`
+and they log a warning. Not broken, just noisy.
+
+- **How to test:** `mix colony.reason` — count warnings. Fix is either
+  (a) don't start SystemSupervisor when kafka is disabled, or (b) lower
+  the "subscribe failed" log level to debug when the reason is
+  `:kafka_adapter_not_configured` specifically.
 
 ## Commit `1a85585` missing co-author trailer
 

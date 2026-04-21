@@ -69,7 +69,7 @@ defmodule ColonyCell.ReasonerTest do
           tool_calls: [
             %{
               id: "toolu_1",
-              name: "mitigation.selected",
+              name: "select_mitigation",
               arguments: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
             }
           ],
