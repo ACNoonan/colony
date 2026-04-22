@@ -399,11 +399,19 @@ These are the non-negotiables. Every roadmap decision is checked against them.
 - Canonical event vocabulary defined but not yet migrated in code
   ([ADR-0001](docs/adr/0001-canonical-control-loop-events.md) has the full
   mapping from the current scenario-flavored events).
-- Adapter seam declared, not yet implemented
-  ([ADR-0002](docs/adr/0002-adapter-seam.md)).
+- Adapter seam declared
+  ([ADR-0002](docs/adr/0002-adapter-seam.md)); first input adapter landed
+  (`apps/colony_adapter_k8s`) — Kubernetes Event replayer translating
+  `ScalingReplicaSet`, `BackOff`, `FailedScheduling`, and `Evicted`
+  payloads into canonical `change.detected`, `health.regressed`, and
+  `capacity.saturated` events. Operator entry point:
+  `mix colony.adapter.k8s.replay [--all | --fixture <slug>]`.
 - OpenTelemetry posture declared; semantic-convention adoption in `data`
   payloads lands with the ADR-0001 migration
   ([ADR-0004](docs/adr/0004-opentelemetry-relationship.md)).
-- Lane A (Kubernetes) bring-up is the next focus; Lane B (ECS) follows.
+- Lane A (Kubernetes) bring-up in progress; first input adapter shipped.
+  Next: live Kubernetes watch (replacing fixture replay), a
+  Prometheus / Alertmanager input adapter, and first output adapters
+  (Discord / Linear). Lane B (ECS) follows.
 - First real action targets: Discord and Linear (Phase 2).
 - See [`FINDINGS.md`](FINDINGS.md) for runtime-hardening gaps.

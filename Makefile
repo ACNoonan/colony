@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down logs ps kafka-topics demo demo-canary demo-story manifest tail reason
+.PHONY: up down logs ps kafka-topics demo demo-canary demo-story manifest tail reason adapter-k8s-replay adapter-k8s-fixtures
 
 up:
 	$(COMPOSE) up -d
@@ -31,6 +31,12 @@ tail:
 
 reason:
 	mix colony.reason
+
+adapter-k8s-replay:
+	mix colony.adapter.k8s.replay --all
+
+adapter-k8s-fixtures:
+	mix colony.adapter.k8s.replay --list
 
 demo-story:
 	@printf '%s\n' \
