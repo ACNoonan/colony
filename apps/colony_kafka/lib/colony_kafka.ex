@@ -2,14 +2,17 @@ defmodule ColonyKafka do
   @moduledoc """
   Kafka boundary for the swarm runtime.
 
-  The runtime value proposition depends on Kafka being a first-class event log,
-  not just a transport adapter hidden under higher-level abstractions.
+  Durable events are central to the **self-healing infrastructure** thesis:
+  handoffs between specialists, partition-local coordination, replay after
+  failure, and operator-visible causal chains. Kafka is a first-class event
+  log here, not a hidden transport detail.
 
   Every `publish/2` runs the envelope gate before hitting the adapter.
   Gate mode (`:warn` | `:enforce` | `:disabled`) is read from
   `config :colony_core, :gate_mode`. Default is `:warn` so a new rule
   surfaces in the log + `colony.runtime.gate.rejected` topic before it
-  starts blocking traffic.
+  starts blocking traffic. For production-style bounded autonomy, expect to
+  tighten gate policy and related hardening (see `FINDINGS.md`).
   """
 
   require Logger

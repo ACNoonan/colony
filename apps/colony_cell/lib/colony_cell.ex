@@ -2,8 +2,12 @@ defmodule ColonyCell do
   @moduledoc """
   Public API for swarm cells.
 
-  A "cell" is the local execution island we want to scale out later across
-  partitions and nodes. The demo story depends on this boundary being explicit.
+  A cell is the local execution boundary for partitioned, replay-friendly work:
+  state is rebuilt from the event log, duplicate events and `action_key`
+  retries are handled safely, and reasoning runs against manifest-defined
+  triggers. Reference demos in `colony_demo` exercise this surface; the same
+  primitives apply as the runtime widens toward broader self-healing infra
+  behaviors (see project `README.md` capability ladder).
   """
 
   alias ColonyCell.Cell

@@ -4,6 +4,14 @@ Every cell in this swarm reads this file, then its role prompt, then begins
 work. These rules are not suggestions. They are the reason replay, recovery,
 and coordination work.
 
+## Scope
+
+The shipped role prompts today implement **README capability ladder step 1**:
+change-failure response (e.g. deploy and schema regressions). The same rules
+apply as the swarm widens toward assisted remediation, platform remediation,
+and optimization: envelope discipline, idempotency, partitioning, causation,
+and manifest truth stay fixed.
+
 ## 1. Envelope discipline
 
 Every event emitted by a cell MUST be a valid `ColonyCore.Event`:

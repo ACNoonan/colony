@@ -8,11 +8,11 @@ defmodule ColonyCell.Cell do
   alias ColonyCore.Prompt
 
   @moduledoc """
-  Minimal replay-friendly cell process.
+  Minimal replay-friendly cell process for the self-healing infra runtime.
 
   Today this is a GenServer so the repo stays dependency-light. The
   interface is intentionally shaped so we can later swap the internals to
-  Jido processes without rewriting the whole demo surface.
+  Jido processes without rewriting operator-facing APIs.
 
   A cell optionally carries a `:prototype` — the name of the manifest
   entry that declares this cell's kind, role, topic, partition scheme,
@@ -20,6 +20,10 @@ defmodule ColonyCell.Cell do
   layered constitution+role prompt at init. The hash is stamped on every
   event the cell emits, and a dispatched event whose `prompt_hash`
   disagrees with the cell's current hash is flagged as prompt drift.
+
+  Idempotency (`handled_events`, `applied_actions`), partition-aware
+  `partition_key`, and Kafka-backed emit are the primitives that make
+  remediation scenarios safe to replay and extend.
   """
 
   def start_link(opts) do
@@ -114,7 +118,10 @@ defmodule ColonyCell.Cell do
     Manifest.fetch_cell!(manifest, prototype)
   rescue
     e ->
-      Logger.warning("Cell prototype #{inspect(prototype)} not resolvable: #{Exception.message(e)}")
+      Logger.warning(
+        "Cell prototype #{inspect(prototype)} not resolvable: #{Exception.message(e)}"
+      )
+
       nil
   end
 
@@ -160,7 +167,10 @@ defmodule ColonyCell.Cell do
   defp maybe_reason(%{manifest_cell: nil}, _event), do: :ok
   defp maybe_reason(%{manifest_cell: %Manifest.Cell{kind: :system}}, _event), do: :ok
 
-  defp maybe_reason(%{manifest_cell: %Manifest.Cell{} = manifest_cell} = state, %Event{type: type} = event) do
+  defp maybe_reason(
+         %{manifest_cell: %Manifest.Cell{} = manifest_cell} = state,
+         %Event{type: type} = event
+       ) do
     if type in manifest_cell.reasoning_triggers do
       Task.Supervisor.start_child(ColonyCell.TaskSupervisor, fn ->
         ColonyCell.Reasoner.reason(state.cell_id, event, state.projections, state.manifest_cell)
@@ -228,7 +238,8 @@ defmodule ColonyCell.Cell do
 
   defp default_source(%{prototype: nil, cell_id: cell_id}), do: "cell.#{cell_id}"
 
-  defp default_source(%{prototype: prototype, partition_value: partition}) when is_binary(prototype) do
+  defp default_source(%{prototype: prototype, partition_value: partition})
+       when is_binary(prototype) do
     "#{prototype}.#{partition}"
   end
 
