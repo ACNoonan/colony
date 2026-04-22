@@ -1,0 +1,31 @@
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "orders-api.17ac04e1b0a15abc",
+    "namespace": "staging",
+    "uid": "2c1d3f5a-7b4e-4c6d-9f2e-7a84f6b2a202",
+    "resourceVersion": "1119022",
+    "creationTimestamp": "2026-04-22T11:05:14Z"
+  },
+  "type": "Normal",
+  "reason": "ScalingReplicaSet",
+  "message": "Scaled up replica set orders-api-9d4c1a0 to 5",
+  "source": {
+    "component": "deployment-controller"
+  },
+  "involvedObject": {
+    "kind": "Deployment",
+    "namespace": "staging",
+    "name": "orders-api",
+    "apiVersion": "apps/v1",
+    "uid": "b8d4e1f1-4e7b-4d33-af4e-2dfd8dee2202",
+    "resourceVersion": "1119015"
+  },
+  "firstTimestamp": "2026-04-22T11:05:14Z",
+  "lastTimestamp": "2026-04-22T11:05:14Z",
+  "count": 1,
+  "eventTime": null,
+  "reportingComponent": "",
+  "reportingInstance": ""
+}

@@ -1,0 +1,33 @@
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "payments-api-6fc98d6d4c-xqz9k.17ab9df0bb2a3b47",
+    "namespace": "prod",
+    "uid": "3d2e4f6b-8c5f-4d7e-8a3f-8b95a7c3b303",
+    "resourceVersion": "8372990",
+    "creationTimestamp": "2026-04-22T10:15:02Z"
+  },
+  "type": "Warning",
+  "reason": "BackOff",
+  "message": "Back-off restarting failed container api in pod payments-api-6fc98d6d4c-xqz9k_prod(7e3f1a2b)",
+  "source": {
+    "component": "kubelet",
+    "host": "ip-10-0-1-12.ec2.internal"
+  },
+  "involvedObject": {
+    "kind": "Pod",
+    "namespace": "prod",
+    "name": "payments-api-6fc98d6d4c-xqz9k",
+    "apiVersion": "v1",
+    "uid": "c9e5f2a2-5f8c-4e44-b05f-3eff9eff3303",
+    "resourceVersion": "8372985",
+    "fieldPath": "spec.containers{api}"
+  },
+  "firstTimestamp": "2026-04-22T10:13:11Z",
+  "lastTimestamp": "2026-04-22T10:15:02Z",
+  "count": 7,
+  "eventTime": null,
+  "reportingComponent": "",
+  "reportingInstance": ""
+}

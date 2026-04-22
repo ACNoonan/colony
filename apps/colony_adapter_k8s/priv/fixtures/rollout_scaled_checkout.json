@@ -1,0 +1,31 @@
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "checkout-api.17ab9d3f1c0c4a12",
+    "namespace": "prod",
+    "uid": "1b0b2c4e-6a3e-4b6f-9d1c-6b73f5a1a101",
+    "resourceVersion": "8372911",
+    "creationTimestamp": "2026-04-22T10:12:34Z"
+  },
+  "type": "Normal",
+  "reason": "ScalingReplicaSet",
+  "message": "Scaled up replica set checkout-api-7f3a2e1 to 3",
+  "source": {
+    "component": "deployment-controller"
+  },
+  "involvedObject": {
+    "kind": "Deployment",
+    "namespace": "prod",
+    "name": "checkout-api",
+    "apiVersion": "apps/v1",
+    "uid": "a7c3d0e0-3d6a-4c22-9e3d-1cfc7cde1101",
+    "resourceVersion": "8372900"
+  },
+  "firstTimestamp": "2026-04-22T10:12:34Z",
+  "lastTimestamp": "2026-04-22T10:12:34Z",
+  "count": 1,
+  "eventTime": null,
+  "reportingComponent": "",
+  "reportingInstance": ""
+}

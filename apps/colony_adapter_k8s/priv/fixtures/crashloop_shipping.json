@@ -1,0 +1,33 @@
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "shipping-api-84c0b7f9fd-b2j4m.17ab9e02ef3c1d55",
+    "namespace": "prod",
+    "uid": "4e3f5a7c-9d6a-4e8f-9b4a-9ca6b8d4c404",
+    "resourceVersion": "8373041",
+    "creationTimestamp": "2026-04-22T10:18:55Z"
+  },
+  "type": "Warning",
+  "reason": "BackOff",
+  "message": "Back-off restarting failed container worker in pod shipping-api-84c0b7f9fd-b2j4m_prod(9b2c3d4e)",
+  "source": {
+    "component": "kubelet",
+    "host": "ip-10-0-2-8.ec2.internal"
+  },
+  "involvedObject": {
+    "kind": "Pod",
+    "namespace": "prod",
+    "name": "shipping-api-84c0b7f9fd-b2j4m",
+    "apiVersion": "v1",
+    "uid": "daf603c3-6f9d-4f55-c16a-4fff0fff4404",
+    "resourceVersion": "8373032",
+    "fieldPath": "spec.containers{worker}"
+  },
+  "firstTimestamp": "2026-04-22T10:14:20Z",
+  "lastTimestamp": "2026-04-22T10:18:55Z",
+  "count": 12,
+  "eventTime": null,
+  "reportingComponent": "",
+  "reportingInstance": ""
+}

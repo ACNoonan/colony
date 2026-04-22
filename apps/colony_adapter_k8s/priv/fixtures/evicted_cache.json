@@ -1,0 +1,32 @@
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "cache-proxy-5f87f6c8b4-wm2pr.17ab9f5c4b70da18",
+    "namespace": "prod",
+    "uid": "6a5b7c9e-bf8c-4a0b-b264-ce98daf6e606",
+    "resourceVersion": "8373204",
+    "creationTimestamp": "2026-04-22T10:27:11Z"
+  },
+  "type": "Warning",
+  "reason": "Evicted",
+  "message": "The node had condition: [DiskPressure].",
+  "source": {
+    "component": "kubelet",
+    "host": "ip-10-0-3-4.ec2.internal"
+  },
+  "involvedObject": {
+    "kind": "Pod",
+    "namespace": "prod",
+    "name": "cache-proxy-5f87f6c8b4-wm2pr",
+    "apiVersion": "v1",
+    "uid": "fcc825e5-8bbf-4177-e38c-60ff2fff6606",
+    "resourceVersion": "8373198"
+  },
+  "firstTimestamp": "2026-04-22T10:27:11Z",
+  "lastTimestamp": "2026-04-22T10:27:11Z",
+  "count": 1,
+  "eventTime": null,
+  "reportingComponent": "",
+  "reportingInstance": ""
+}
