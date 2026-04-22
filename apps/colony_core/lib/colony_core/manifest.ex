@@ -239,8 +239,12 @@ defmodule ColonyCore.Manifest do
 
   defp fetch_string!(m, key) do
     case Map.fetch!(m, key) do
-      v when is_binary(v) and byte_size(v) > 0 -> v
-      other -> raise ArgumentError, "manifest cell #{key} must be a non-empty string, got: #{inspect(other)}"
+      v when is_binary(v) and byte_size(v) > 0 ->
+        v
+
+      other ->
+        raise ArgumentError,
+              "manifest cell #{key} must be a non-empty string, got: #{inspect(other)}"
     end
   end
 
@@ -297,7 +301,9 @@ defmodule ColonyCore.Manifest do
     end)
   end
 
-  defp validate_non_empty!([]), do: raise(ArgumentError, "manifest must declare at least one cell")
+  defp validate_non_empty!([]),
+    do: raise(ArgumentError, "manifest must declare at least one cell")
+
   defp validate_non_empty!(_), do: :ok
 
   defp validate_unique_names!(cells) do

@@ -128,9 +128,7 @@ defmodule ColonyCell.Reasoner do
   defp tool_call_to_attrs(%Event{} = trigger, tools, %{name: tool_name, arguments: args}) do
     case Enum.find(tools, &(&1.name == tool_name)) do
       nil ->
-        Logger.warning(
-          "Reasoner: LLM returned unknown tool name #{inspect(tool_name)}; skipping"
-        )
+        Logger.warning("Reasoner: LLM returned unknown tool name #{inspect(tool_name)}; skipping")
 
         nil
 

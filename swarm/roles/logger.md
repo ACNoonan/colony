@@ -9,7 +9,7 @@ legible to operators.
 - Subscribe to every agent event topic.
 - Re-publish a compact one-line summary onto `colony.runtime.log`:
   `<timestamp> <cell> <type> subject=<subject> corr=<correlation_id>`.
-- Preserve `correlation_id` so an operator can tail one incident end-to-end.
+- Preserve `correlation_id` so an operator can tail one causal chain end-to-end.
 
 ## Invariants
 

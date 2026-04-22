@@ -14,7 +14,10 @@ defmodule ColonyCore.PromptTest do
     Application.put_env(:colony_core, :swarm_dir, dir)
 
     on_exit(fn ->
-      if original, do: Application.put_env(:colony_core, :swarm_dir, original), else: Application.delete_env(:colony_core, :swarm_dir)
+      if original,
+        do: Application.put_env(:colony_core, :swarm_dir, original),
+        else: Application.delete_env(:colony_core, :swarm_dir)
+
       File.rm_rf!(dir)
     end)
 
@@ -91,7 +94,10 @@ defmodule ColonyCore.PromptTest do
 
       before = Prompt.hash_for(cell)
 
-      File.write!(Path.join(Application.fetch_env!(:colony_core, :swarm_dir), "constitution.md"), "CHANGED\n")
+      File.write!(
+        Path.join(Application.fetch_env!(:colony_core, :swarm_dir), "constitution.md"),
+        "CHANGED\n"
+      )
 
       refute Prompt.hash_for(cell) == before
     end

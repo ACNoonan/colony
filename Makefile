@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down logs ps kafka-topics demo demo-story manifest tail reason
+.PHONY: up down logs ps kafka-topics demo demo-canary demo-story manifest tail reason
 
 up:
 	$(COMPOSE) up -d
@@ -18,7 +18,10 @@ kafka-topics:
 	$(COMPOSE) exec redpanda rpk topic list
 
 demo:
-	mix run -e "ColonyDemo.run()"
+	mix colony.demo
+
+demo-canary:
+	mix colony.demo --scenario canary_regression
 
 manifest:
 	mix colony.manifest
@@ -31,7 +34,9 @@ reason:
 
 demo-story:
 	@printf '%s\n' \
-	"Demo narrative:" \
+	"Self-healing infra runtime (Phase 1 reference scenarios):" \
+	"- change_failure: deploy/schema regression with downstream breakage" \
+	"- canary_regression: canary rollout degrades live behavior" \
 	"1. Producers emit commands and observations from many services." \
 	"2. Kafka partitions route work into swarm cells." \
 	"3. A cell crashes and is restarted under supervision." \

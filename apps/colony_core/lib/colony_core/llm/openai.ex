@@ -88,12 +88,14 @@ defmodule ColonyCore.LLM.OpenAI do
   end
 
   defp decode_args(nil), do: %{}
+
   defp decode_args(str) when is_binary(str) do
     case Jason.decode(str) do
       {:ok, map} when is_map(map) -> map
       _ -> %{}
     end
   end
+
   defp decode_args(other) when is_map(other), do: other
 
   defp finish_reason("stop"), do: :end_turn
