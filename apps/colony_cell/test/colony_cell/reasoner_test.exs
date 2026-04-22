@@ -18,7 +18,7 @@ defmodule ColonyCell.ReasonerTest do
   defp trigger_event do
     Event.new(%{
       id: "evt-trigger-#{System.unique_integer([:positive])}",
-      type: "mitigation.proposed",
+      type: "remediation.proposed",
       source: "specialist.rollback",
       subject: "incident-042",
       partition_key: "incident-042",
@@ -69,7 +69,7 @@ defmodule ColonyCell.ReasonerTest do
           tool_calls: [
             %{
               id: "toolu_1",
-              name: "select_mitigation",
+              name: "select_remediation",
               arguments: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
             }
           ],
@@ -81,7 +81,7 @@ defmodule ColonyCell.ReasonerTest do
       trigger = trigger_event()
       assert {:ok, [attrs], response} = Reasoner.plan(trigger, %{}, coordinator_cell())
 
-      assert attrs.type == "mitigation.selected"
+      assert attrs.type == "remediation.selected"
       assert attrs.subject == trigger.subject
       assert attrs.causation_id == trigger.id
       assert attrs.correlation_id == trigger.correlation_id
@@ -104,7 +104,8 @@ defmodule ColonyCell.ReasonerTest do
 
     test "returns error on LLM failure" do
       # empty queue → :fixture_exhausted
-      assert {:error, :fixture_exhausted} = Reasoner.plan(trigger_event(), %{}, coordinator_cell())
+      assert {:error, :fixture_exhausted} =
+               Reasoner.plan(trigger_event(), %{}, coordinator_cell())
     end
 
     test "planned emit attrs carry an expanded action_key" do
@@ -114,7 +115,7 @@ defmodule ColonyCell.ReasonerTest do
           tool_calls: [
             %{
               id: "toolu_1",
-              name: "select_mitigation",
+              name: "select_remediation",
               arguments: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
             }
           ],
@@ -127,7 +128,7 @@ defmodule ColonyCell.ReasonerTest do
       assert {:ok, [attrs], _resp} = Reasoner.plan(trigger, %{}, coordinator_cell())
 
       assert attrs.action_key ==
-               "mitigation.selected:#{trigger.subject}:#{trigger.correlation_id}"
+               "remediation.selected:#{trigger.subject}:#{trigger.correlation_id}"
     end
   end
 
@@ -136,10 +137,10 @@ defmodule ColonyCell.ReasonerTest do
       trigger = trigger_event()
 
       assert Reasoner.expand_action_key(
-               "mitigation.proposed:{subject}:{args.strategy}",
+               "remediation.proposed:{subject}:{args.strategy}",
                trigger,
                %{"strategy" => "rollback"}
-             ) == "mitigation.proposed:#{trigger.subject}:rollback"
+             ) == "remediation.proposed:#{trigger.subject}:rollback"
 
       assert Reasoner.expand_action_key(
                "{correlation_id}:{causation_id}",

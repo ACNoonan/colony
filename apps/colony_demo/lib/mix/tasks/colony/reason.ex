@@ -1,13 +1,20 @@
 defmodule Mix.Tasks.Colony.Reason do
-  @shortdoc "Exercise the coordinator reasoning loop end-to-end"
+  @shortdoc "Exercise reasoning on a Phase 1 incident-coordination scenario"
 
   @moduledoc """
+  Exercises coordinator or specialist reasoning against a shipped **Phase 1**
+  reference scenario (README capability ladder step 1). The positional
+  argument is the remediation episode subject (`incident_id` in both current
+  scenarios).
+
   Usage: mix colony.reason [incident_id] [options]
 
   Options:
+    --scenario <name>     Which scenario fixture to use (default:
+                          `change_failure`; also supports `canary_regression`)
     --role <role>         Which role to trigger (default: coordinator).
-                          coordinator → mitigation.proposed trigger
-                          specialist  → incident.triaged trigger
+                          coordinator → remediation.proposed trigger
+                          specialist  → blast_radius.assessed trigger
     --strategy <name>     Strategy for the fake proposal (default: rollback;
                           only used by the coordinator path)
     --dispatch            Start a real cell, dispatch the trigger, and wait
@@ -29,19 +36,17 @@ defmodule Mix.Tasks.Colony.Reason do
 
   use Mix.Task
 
-  alias ColonyCore.Event
   alias ColonyCore.Manifest
   alias ColonyCell.Reasoner
 
-  @default_incident "incident-042"
   @default_role "coordinator"
-  @default_strategy "rollback"
 
   @impl Mix.Task
   def run(args) do
     {opts, positional, invalid} =
       OptionParser.parse(args,
         strict: [
+          scenario: :string,
           role: :string,
           strategy: :string,
           dispatch: :boolean,
@@ -54,9 +59,12 @@ defmodule Mix.Tasks.Colony.Reason do
       exit({:shutdown, 1})
     end
 
-    incident = positional |> List.first() || @default_incident
+    scenario =
+      opts |> Keyword.get(:scenario, ColonyDemo.default_scenario()) |> normalize_scenario!()
+
+    incident = positional |> List.first() || default_episode_subject(scenario)
     role = Keyword.get(opts, :role, @default_role)
-    strategy = Keyword.get(opts, :strategy, @default_strategy)
+    strategy = Keyword.get(opts, :strategy, default_strategy(scenario))
     dispatch = Keyword.get(opts, :dispatch, false)
     verbose = Keyword.get(opts, :verbose, false)
 
@@ -71,10 +79,11 @@ defmodule Mix.Tasks.Colony.Reason do
 
     manifest = Manifest.load()
     cell = fetch_cell_for_role!(manifest, role)
-    trigger = build_trigger(role, incident, strategy)
-    projections = build_projections(role, incident, strategy)
+    trigger = build_trigger(scenario, role, incident, strategy)
+    projections = build_projections(scenario, role, incident, strategy)
 
-    Mix.shell().info("incident: #{incident}")
+    Mix.shell().info("scenario: #{scenario}")
+    Mix.shell().info("episode:  #{incident}")
     Mix.shell().info("role:     #{cell.role}  (manifest: #{cell.name})")
     Mix.shell().info("adapter:  #{inspect(ColonyCore.LLM.adapter())}")
 
@@ -191,86 +200,44 @@ defmodule Mix.Tasks.Colony.Reason do
     end
   end
 
-  defp build_trigger("coordinator", incident, strategy) do
-    Event.new(%{
-      id: "evt-proposed-#{strategy}-#{System.unique_integer([:positive])}",
-      type: "mitigation.proposed",
-      source: "specialist.#{strategy}",
-      subject: incident,
-      partition_key: incident,
-      correlation_id: "corr-#{incident}",
-      causation_id: "evt-triaged-#{incident}",
-      tenant_id: "tenant-acme",
-      swarm_id: "incident-response",
-      sequence: 9,
-      data: %{
-        "strategy" => strategy,
-        "target_version" => "v2.3.4",
-        "estimated_recovery_seconds" => 90
-      }
-    })
+  defp build_trigger(scenario, role, incident, strategy) do
+    scenario
+    |> ColonyDemo.scenario_module!()
+    |> apply(:reason_trigger, [role, incident, strategy])
+  rescue
+    e in ArgumentError ->
+      Mix.shell().error(Exception.message(e))
+      exit({:shutdown, 1})
   end
 
-  defp build_trigger("specialist", incident, _strategy) do
-    Event.new(%{
-      id: "evt-triaged-#{System.unique_integer([:positive])}",
-      type: "incident.triaged",
-      source: "coordinator.triage",
-      subject: incident,
-      partition_key: incident,
-      correlation_id: "corr-#{incident}",
-      causation_id: "evt-opened-#{incident}",
-      tenant_id: "tenant-acme",
-      swarm_id: "incident-response",
-      sequence: 8,
-      data: %{
-        "severity" => "high",
-        "total_affected_endpoints" => 7,
-        "candidate_mitigations" => ["rollback", "schema_shim"]
-      }
-    })
+  defp build_projections(scenario, role, incident, strategy) do
+    scenario
+    |> ColonyDemo.scenario_module!()
+    |> apply(:reason_projections, [role, incident, strategy])
+  rescue
+    _ -> %{}
   end
 
-  defp build_trigger(role, _incident, _strategy) do
-    Mix.shell().error("No canned trigger for role #{inspect(role)}")
-    exit({:shutdown, 1})
+  defp default_episode_subject(scenario) do
+    ColonyDemo.scenario_module!(scenario).default_episode_subject()
   end
 
-  defp build_projections("coordinator", incident, strategy) do
-    %{
-      incident => [
-        %{
-          "type" => "mitigation.proposed",
-          "strategy" => strategy,
-          "estimated_recovery_seconds" => 90
-        },
-        %{
-          "type" => "mitigation.proposed",
-          "strategy" => "schema_shim",
-          "estimated_recovery_seconds" => 300
-        },
-        %{
-          "type" => "incident.triaged",
-          "severity" => "high",
-          "candidate_mitigations" => [strategy, "schema_shim"]
-        },
-        %{"type" => "incident.opened", "service" => "checkout-svc"}
-      ]
-    }
+  defp default_strategy(scenario) do
+    ColonyDemo.scenario_module!(scenario).default_strategy()
   end
 
-  defp build_projections("specialist", incident, _strategy) do
-    %{
-      incident => [
-        %{
-          "type" => "incident.triaged",
-          "severity" => "high",
-          "candidate_mitigations" => ["rollback", "schema_shim"]
-        },
-        %{"type" => "incident.opened", "service" => "checkout-svc"}
-      ]
-    }
-  end
+  defp normalize_scenario!(scenario) when is_atom(scenario),
+    do: scenario |> Atom.to_string() |> normalize_scenario!()
 
-  defp build_projections(_role, _incident, _strategy), do: %{}
+  defp normalize_scenario!(scenario) when is_binary(scenario) do
+    if scenario in ColonyDemo.available_scenarios() do
+      scenario
+    else
+      Mix.shell().error(
+        "Unknown scenario #{inspect(scenario)}. Available: #{inspect(ColonyDemo.available_scenarios())}"
+      )
+
+      exit({:shutdown, 1})
+    end
+  end
 end

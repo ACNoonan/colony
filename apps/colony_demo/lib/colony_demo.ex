@@ -1,18 +1,32 @@
 defmodule ColonyDemo do
   @moduledoc """
-  First reference demo: incident-response swarm.
+  Reference scenarios for **Phase 1: incident coordination** (capability
+  ladder step 1).
 
-  A deployment to `checkout-svc` ships a schema change that breaks downstream
-  consumers. The swarm walks five phases as Kafka events:
+  `Colony` targets self-healing infrastructure; these demos are the first hard
+  proving ground, not the whole product. They exercise the same runtime
+  primitives used for broader remediation: manifest routing, partitioned cells,
+  fan-out/fan-in, reasoning triggers, bounded actions, crash/replay, and
+  idempotency.
 
-    1. Ingest      — `deployment.completed`, `schema.drift.detected`
-    2. Fan-out     — `incident.opened`, N × `impact.scan.requested`
-    3. Fan-in      — N × `impact.scan.reported`, `incident.triaged`
-    4. Decide+act  — `mitigation.proposed`, `mitigation.selected`, `mitigation.applied`
-    5. Close       — `incident.resolved`
+  Shipped reference scenarios today:
+
+  - `:change_failure` — deploy/schema regression with downstream breakage
+  - `:canary_regression` — canary rollout degrades customer-facing behavior
+  - `:bad_config_rollout` — bad dynamic-config push lands, mitigations revert
+
+  All three scenarios walk the same five-phase control loop:
+
+    1. Ingest      — change signal arrives
+    2. Fan-out     — one remediation episode opens, N scans are requested
+    3. Fan-in      — scans report back, coordinator triages
+    4. Decide+act  — specialists propose, coordinator selects, applier executes
+    5. Close       — the episode is resolved
 
   Detection events partition by service; incident events partition by
-  incident_id so one incident's causal chain lands on one cell.
+  `incident_id` so one episode's causal chain lands on one cell.
+
+  Event fixtures live under `ColonyDemo.Scenarios.*`.
   """
 
   require Logger
@@ -23,15 +37,25 @@ defmodule ColonyDemo do
 
   @event_topic Application.compile_env(:colony_demo, :event_topic, "colony.agent.events")
 
-  def run do
-    Logger.info("=== Colony Demo: Incident-Response Swarm ===")
+  @scenarios [
+    ColonyDemo.Scenarios.ChangeFailure,
+    ColonyDemo.Scenarios.CanaryRegression,
+    ColonyDemo.Scenarios.BadConfigRollout
+  ]
+
+  def run, do: run(default_scenario())
+
+  def run(scenario_name) do
+    scenario = scenario_module!(scenario_name)
+
+    Logger.info("=== Colony Demo: #{scenario.title()} (ladder step 1) ===")
 
     ensure_topic()
     start_consumer()
     # Give the consumer time to join the group and get assignments
     Process.sleep(5_000)
 
-    events = sample_events()
+    events = sample_events(scenario_name)
     produce(events)
     # Give the consumer time to process
     Process.sleep(5_000)
@@ -88,7 +112,9 @@ defmodule ColonyDemo do
             ColonyCell.dispatch(runtime_id, event)
 
           {:error, reason} ->
-            Logger.warning("[consumer] start_for #{manifest_cell.name} failed: #{inspect(reason)}")
+            Logger.warning(
+              "[consumer] start_for #{manifest_cell.name} failed: #{inspect(reason)}"
+            )
         end
       end)
 
@@ -170,7 +196,9 @@ defmodule ColonyDemo do
           end
 
         cell_events =
-          Enum.filter(events, fn e -> Manifest.cell_id_for!(manifest, @event_topic, e) == partition end)
+          Enum.filter(events, fn e ->
+            Manifest.cell_id_for!(manifest, @event_topic, e) == partition
+          end)
 
         Logger.info("Replaying #{length(cell_events)} events...")
 
@@ -197,7 +225,7 @@ defmodule ColonyDemo do
     Logger.info("=== Action-Level Idempotency ===")
 
     manifest = Manifest.load()
-    applied = Enum.find(events, fn e -> e.type == "mitigation.applied" end)
+    applied = Enum.find(events, fn e -> e.type == "remediation.applied" end)
     partition = Manifest.cell_id_for!(manifest, @event_topic, applied)
     [coordinator | _] = Manifest.consuming_cells(manifest, @event_topic, applied.type)
     {:ok, cell_id} = ColonyCell.start_for(coordinator, partition)
@@ -235,239 +263,47 @@ defmodule ColonyDemo do
     )
   end
 
-  def sample_events do
-    correlation = "corr-#{System.unique_integer([:positive])}"
-    incident = "incident-042"
-    service = "checkout-svc"
-    tenant = "tenant-acme"
-    swarm = "incident-response"
-    downstreams = ["orders-svc", "billing-svc", "shipping-svc"]
+  def sample_events, do: sample_events(default_scenario())
 
-    deploy =
-      Event.new(%{
-        id: "evt-deploy-#{System.unique_integer([:positive])}",
-        type: "deployment.completed",
-        source: "cd.system",
-        subject: service,
-        partition_key: service,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "cd-runner",
-        correlation_id: correlation,
-        causation_id: correlation,
-        sequence: 1,
-        data: %{
-          "service" => service,
-          "version" => "v2.4.0",
-          "schema_hash" => "9a1b4c2d"
-        }
-      })
+  def sample_events(scenario_name) do
+    scenario_module!(scenario_name).events()
+  end
 
-    drift =
-      Event.new(%{
-        id: "evt-drift-#{System.unique_integer([:positive])}",
-        type: "schema.drift.detected",
-        source: "detector.schema",
-        subject: service,
-        partition_key: service,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "drift-detector-1",
-        correlation_id: correlation,
-        causation_id: deploy.id,
-        sequence: 2,
-        data: %{
-          "service" => service,
-          "field" => "order.total",
-          "from" => "integer_cents",
-          "to" => "decimal_dollars",
-          "impacted_consumers" => downstreams
-        }
-      })
+  @doc """
+  All registered scenario modules, in listing order.
+  """
+  @spec scenarios() :: [module()]
+  def scenarios, do: @scenarios
 
-    opened =
-      Event.new(%{
-        id: "evt-opened-#{System.unique_integer([:positive])}",
-        type: "incident.opened",
-        source: "coordinator.triage",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "coordinator-1",
-        correlation_id: correlation,
-        causation_id: drift.id,
-        sequence: 1,
-        data: %{
-          "incident_id" => incident,
-          "trigger_event" => drift.id,
-          "service" => service
-        }
-      })
+  @doc """
+  Slugs of all registered scenarios, preserving listing order.
+  """
+  @spec available_scenarios() :: [binary()]
+  def available_scenarios, do: Enum.map(@scenarios, & &1.slug())
 
-    scan_requests =
-      for {downstream, idx} <- Enum.with_index(downstreams) do
-        Event.new(%{
-          id: "evt-scan-req-#{downstream}-#{System.unique_integer([:positive])}",
-          type: "impact.scan.requested",
-          source: "coordinator.triage",
-          subject: incident,
-          partition_key: incident,
-          tenant_id: tenant,
-          swarm_id: swarm,
-          agent_id: "coordinator-1",
-          correlation_id: correlation,
-          causation_id: opened.id,
-          sequence: 2 + idx,
-          data: %{"target_service" => downstream, "incident_id" => incident}
-        })
-      end
+  @doc """
+  Default scenario slug for tasks that don't accept `--scenario`.
+  """
+  @spec default_scenario() :: binary()
+  def default_scenario, do: hd(@scenarios).slug()
 
-    scan_reports =
-      for {{downstream, severity, endpoints}, idx} <-
-            Enum.with_index([
-              {"orders-svc", "high", 4},
-              {"billing-svc", "medium", 2},
-              {"shipping-svc", "low", 1}
-            ]) do
-        request = Enum.at(scan_requests, idx)
+  @doc """
+  Resolve a slug (string or atom) to its scenario module.
 
-        Event.new(%{
-          id: "evt-scan-rpt-#{downstream}-#{System.unique_integer([:positive])}",
-          type: "impact.scan.reported",
-          source: "scanner.#{downstream}",
-          subject: incident,
-          partition_key: incident,
-          tenant_id: tenant,
-          swarm_id: swarm,
-          agent_id: "scanner-#{downstream}",
-          correlation_id: correlation,
-          causation_id: request.id,
-          sequence: 5 + idx,
-          data: %{
-            "target_service" => downstream,
-            "blast_radius" => severity,
-            "affected_endpoints" => endpoints
-          }
-        })
-      end
+  Raises `ArgumentError` on an unknown slug.
+  """
+  @spec scenario_module!(binary() | atom()) :: module()
+  def scenario_module!(slug) when is_atom(slug), do: scenario_module!(Atom.to_string(slug))
 
-    triaged =
-      Event.new(%{
-        id: "evt-triaged-#{System.unique_integer([:positive])}",
-        type: "incident.triaged",
-        source: "coordinator.triage",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "coordinator-1",
-        correlation_id: correlation,
-        causation_id: List.last(scan_reports).id,
-        sequence: 8,
-        data: %{
-          "severity" => "high",
-          "total_affected_endpoints" => 7,
-          "candidate_mitigations" => ["rollback", "schema_shim"]
-        }
-      })
+  def scenario_module!(slug) when is_binary(slug) do
+    case Enum.find(@scenarios, &(&1.slug() == slug)) do
+      nil ->
+        raise ArgumentError,
+              "unknown ColonyDemo scenario #{inspect(slug)}; expected one of " <>
+                inspect(available_scenarios())
 
-    proposal_rollback =
-      Event.new(%{
-        id: "evt-prop-rollback-#{System.unique_integer([:positive])}",
-        type: "mitigation.proposed",
-        source: "specialist.rollback",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "specialist-rollback-1",
-        correlation_id: correlation,
-        causation_id: triaged.id,
-        sequence: 9,
-        data: %{
-          "strategy" => "rollback",
-          "target_version" => "v2.3.4",
-          "estimated_recovery_seconds" => 90
-        }
-      })
-
-    proposal_shim =
-      Event.new(%{
-        id: "evt-prop-shim-#{System.unique_integer([:positive])}",
-        type: "mitigation.proposed",
-        source: "specialist.schema_shim",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "specialist-shim-1",
-        correlation_id: correlation,
-        causation_id: triaged.id,
-        sequence: 10,
-        data: %{
-          "strategy" => "schema_shim",
-          "shim_layer" => "gateway",
-          "estimated_recovery_seconds" => 300
-        }
-      })
-
-    selected =
-      Event.new(%{
-        id: "evt-selected-#{System.unique_integer([:positive])}",
-        type: "mitigation.selected",
-        source: "coordinator.triage",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "coordinator-1",
-        correlation_id: correlation,
-        causation_id: proposal_rollback.id,
-        sequence: 11,
-        data: %{"chosen" => "rollback", "reason" => "fastest_recovery"}
-      })
-
-    applied =
-      Event.new(%{
-        id: "evt-applied-#{System.unique_integer([:positive])}",
-        type: "mitigation.applied",
-        source: "applier.rollout",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "applier-1",
-        action_key: "apply:rollback:#{incident}",
-        correlation_id: correlation,
-        causation_id: selected.id,
-        sequence: 12,
-        data: %{
-          "strategy" => "rollback",
-          "target_version" => "v2.3.4",
-          "result" => "ok"
-        }
-      })
-
-    resolved =
-      Event.new(%{
-        id: "evt-resolved-#{System.unique_integer([:positive])}",
-        type: "incident.resolved",
-        source: "coordinator.triage",
-        subject: incident,
-        partition_key: incident,
-        tenant_id: tenant,
-        swarm_id: swarm,
-        agent_id: "coordinator-1",
-        correlation_id: correlation,
-        causation_id: applied.id,
-        sequence: 13,
-        data: %{"outcome" => "mitigated", "duration_seconds" => 214}
-      })
-
-    [deploy, drift, opened] ++
-      scan_requests ++
-      scan_reports ++
-      [triaged, proposal_rollback, proposal_shim, selected, applied, resolved]
+      module ->
+        module
+    end
   end
 end

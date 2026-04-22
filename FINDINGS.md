@@ -1,8 +1,15 @@
 # Findings
 
-Running log of assumptions and risks in the colony runtime that haven't
-been verified end-to-end. Each entry: what the risk is, why we're unsure,
-how to test.
+This file is the **production-readiness and hardening roadmap** for the
+self-healing infrastructure runtime described in `README.md`. The reference
+change-failure scenario (capability ladder step 1) proves coordination,
+replay, and operator visibility; the entries below are the gaps between
+that proving ground and **trustworthy bounded autonomy** (gates, async
+publish paths, budgets, observability guarantees).
+
+Each entry follows: what the risk is, why we're unsure, how to test. Phase
+numbers are historical ordering from bring-up; they align with README
+near-term priorities (harden primitives before widening scenarios).
 
 ## Cold-broker boot drag (Phase 2, partially addressed)
 
@@ -105,7 +112,7 @@ agent reasoning.
 
 Nothing prevents a misbehaving cell from producing an event whose type
 re-triggers the same cell's reasoner, in a loop. Coordinator's
-`mitigation.proposed` trigger currently can't self-loop (coordinator
+`remediation.proposed` trigger currently can't self-loop (coordinator
 doesn't emit proposed), but the safety isn't structural.
 
 - **How to test:** add a role whose tool set includes the event type
@@ -132,18 +139,18 @@ coordinator reasoned twice but the second emit was deduped via
 `mitigation.selected` event. Zero drift warnings across all cells.
 Snapshot printed for all three cells.
 
-## `ColonyDemo.run()` hasn't been exercised since multi-role (Phase 8)
+## `ColonyDemo.run()` multi-role end-to-end (closed 2026-04-22)
 
-Phase 8 switches the consumer to route each event to every cell whose
-`consumes:` list includes the event type, and renames runtime cells to
-`<role>:<partition>`. The in-code `ColonyDemo.run()` was updated to the
-new shape but not tested end-to-end — only `mix colony.reason --dispatch`
-has been run. The scripted demo may regress silently.
-
-- **How to test:** `make up && mix run -e "ColonyDemo.run()"`. Expect
-  cells named e.g. `coordinator:incident-042`, `detector:checkout-svc`,
-  etc., in the inspect_cells output; the crash+replay phase should still
-  converge to identical projections.
+`make up && mix run -e "ColonyDemo.run()"` exercised end-to-end with the
+canonical control-loop vocabulary after the ADR-0001 migration.
+`inspect_cells` produced `coordinator:incident-042`,
+`detector:checkout-svc`, `scanner:incident-042`,
+`specialist:incident-042`, and `applier:incident-042`. Crash-and-replay
+of `detector:checkout-svc` converged to identical projections.
+Action-level dedup fired as expected on the retry. All published event
+types were canonical (`change.detected`, `episode.opened`,
+`blast_radius.requested/reported/assessed`, `remediation.proposed/
+selected/applied/verified`, `episode.closed`).
 
 ## Commit `1a85585` missing co-author trailer
 

@@ -11,6 +11,8 @@ defmodule ColonyCore.Tools do
   named. The first is the role prompt in `swarm/roles/<role>.md`. They
   should stay in sync: if a role can emit an event, it's declared here,
   and its role prompt describes when to use it.
+
+  Event vocabulary follows `docs/adr/0001-canonical-control-loop-events.md`.
   """
 
   @type tool :: %{
@@ -24,11 +26,11 @@ defmodule ColonyCore.Tools do
   @tools_by_role %{
     "specialist" => [
       %{
-        name: "propose_mitigation",
-        event_type: "mitigation.proposed",
-        action_key: "mitigation.proposed:{subject}:{args.strategy}",
+        name: "propose_remediation",
+        event_type: "remediation.proposed",
+        action_key: "remediation.proposed:{subject}:{args.strategy}",
         description:
-          "Propose a mitigation strategy for this incident. Emit one `propose_mitigation` per viable strategy you can credibly execute. Never invent a strategy outside your specialty.",
+          "Propose a remediation strategy for this episode (subject = episode id). Emit one `propose_remediation` per viable strategy you can credibly execute. Never invent a strategy outside your specialty.",
         parameters: %{
           type: "object",
           properties: %{
@@ -40,7 +42,7 @@ defmodule ColonyCore.Tools do
             estimated_recovery_seconds: %{
               type: "integer",
               description:
-                "Honest estimate of seconds from mitigation.applied to incident.resolved. Do not round down for optimism."
+                "Honest estimate of seconds from remediation.applied to remediation.verified. Do not round down for optimism."
             },
             target_version: %{
               type: "string",
@@ -54,18 +56,18 @@ defmodule ColonyCore.Tools do
     ],
     "coordinator" => [
       %{
-        name: "select_mitigation",
-        event_type: "mitigation.selected",
-        action_key: "mitigation.selected:{subject}:{correlation_id}",
+        name: "select_remediation",
+        event_type: "remediation.selected",
+        action_key: "remediation.selected:{subject}:{correlation_id}",
         description:
-          "Record the mitigation strategy chosen for this incident. Pick one of the strategies that has been proposed; do not invent new strategies.",
+          "Record the remediation strategy chosen for this episode. Pick one of the strategies that has been proposed; do not invent new strategies.",
         parameters: %{
           type: "object",
           properties: %{
             chosen: %{
               type: "string",
               description:
-                "The strategy name, matching one of the `mitigation.proposed` events (e.g. \"rollback\", \"schema_shim\")."
+                "The strategy name, matching one of the `remediation.proposed` events (e.g. \"rollback\", \"schema_shim\")."
             },
             reason: %{
               type: "string",
@@ -77,21 +79,22 @@ defmodule ColonyCore.Tools do
         }
       },
       %{
-        name: "resolve_incident",
-        event_type: "incident.resolved",
-        action_key: "incident.resolved:{subject}:{correlation_id}",
+        name: "close_episode",
+        event_type: "episode.closed",
+        action_key: "episode.closed:{subject}:{correlation_id}",
         description:
-          "Mark the incident as resolved. Only emit this after a mitigation.applied event has been observed with result=ok.",
+          "Mark the episode complete. Only emit after a `remediation.verified` event has been observed with result=confirmed.",
         parameters: %{
           type: "object",
           properties: %{
             outcome: %{
               type: "string",
-              description: "\"mitigated\" if the fix held, \"recurred\" if a new failure appeared."
+              description:
+                "\"mitigated\" if the fix held, \"recurred\" if a new failure appeared."
             },
             duration_seconds: %{
               type: "integer",
-              description: "Approximate seconds from incident.opened to resolution."
+              description: "Approximate seconds from episode.opened to episode.closed."
             }
           },
           required: ["outcome"]

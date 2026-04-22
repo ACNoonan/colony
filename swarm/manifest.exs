@@ -7,8 +7,14 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/coordinator.md",
-      consumes: ["incident.opened", "impact.scan.reported", "mitigation.proposed", "mitigation.applied"],
-      reasoning_triggers: ["mitigation.proposed"]
+      consumes: [
+        "episode.opened",
+        "blast_radius.reported",
+        "remediation.proposed",
+        "remediation.applied",
+        "remediation.verified"
+      ],
+      reasoning_triggers: ["remediation.proposed", "remediation.verified"]
     },
     %{
       name: "specialist",
@@ -17,8 +23,8 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/specialist.md",
-      consumes: ["incident.triaged"],
-      reasoning_triggers: ["incident.triaged"]
+      consumes: ["blast_radius.assessed"],
+      reasoning_triggers: ["blast_radius.assessed"]
     },
     %{
       name: "detector.schema",
@@ -27,7 +33,7 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/detector.md",
-      consumes: ["deployment.completed"]
+      consumes: ["change.detected"]
     },
     %{
       name: "scanner",
@@ -36,7 +42,7 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/scanner.md",
-      consumes: ["impact.scan.requested"]
+      consumes: ["blast_radius.requested"]
     },
     %{
       name: "applier",
@@ -45,7 +51,7 @@
       topic: "colony.agent.events",
       partition_scheme: {:field, :subject},
       prompt: "roles/applier.md",
-      consumes: ["mitigation.selected"]
+      consumes: ["remediation.selected"]
     },
     %{
       name: "runtime.logger",

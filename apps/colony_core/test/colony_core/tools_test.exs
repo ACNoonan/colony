@@ -3,18 +3,18 @@ defmodule ColonyCore.ToolsTest do
 
   alias ColonyCore.Tools
 
-  test "coordinator has tools that produce mitigation.selected and incident.resolved" do
+  test "coordinator has tools that produce remediation.selected and episode.closed" do
     tools = Tools.for_role("coordinator")
     event_types = Enum.map(tools, & &1.event_type)
 
-    assert "mitigation.selected" in event_types
-    assert "incident.resolved" in event_types
+    assert "remediation.selected" in event_types
+    assert "episode.closed" in event_types
   end
 
-  test "specialist has a tool that produces mitigation.proposed" do
+  test "specialist has a tool that produces remediation.proposed" do
     tools = Tools.for_role("specialist")
-    assert Enum.any?(tools, &(&1.event_type == "mitigation.proposed"))
-    assert Tools.event_type_for("specialist", "propose_mitigation") == "mitigation.proposed"
+    assert Enum.any?(tools, &(&1.event_type == "remediation.proposed"))
+    assert Tools.event_type_for("specialist", "propose_remediation") == "remediation.proposed"
   end
 
   test "unknown role returns empty list" do
@@ -22,14 +22,14 @@ defmodule ColonyCore.ToolsTest do
   end
 
   test "known?/2 checks event types, not tool names" do
-    assert Tools.known?("coordinator", "mitigation.selected")
-    refute Tools.known?("coordinator", "deploy.completed")
+    assert Tools.known?("coordinator", "remediation.selected")
+    refute Tools.known?("coordinator", "change.detected")
     refute Tools.known?("ghost", "anything")
   end
 
   test "event_type_for/2 maps tool slug to emitted event type" do
-    assert Tools.event_type_for("coordinator", "select_mitigation") == "mitigation.selected"
-    assert Tools.event_type_for("coordinator", "resolve_incident") == "incident.resolved"
+    assert Tools.event_type_for("coordinator", "select_remediation") == "remediation.selected"
+    assert Tools.event_type_for("coordinator", "close_episode") == "episode.closed"
     assert Tools.event_type_for("coordinator", "unknown_tool") == nil
   end
 

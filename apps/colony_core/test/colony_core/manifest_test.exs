@@ -15,7 +15,7 @@ defmodule ColonyCore.ManifestTest do
             topic: "colony.agent.events",
             partition_scheme: {:field, :subject},
             prompt: "roles/coordinator.md",
-            consumes: ["mitigation.proposed"]
+            consumes: ["remediation.proposed"]
           },
           %{
             name: "runtime.logger",
@@ -30,15 +30,32 @@ defmodule ColonyCore.ManifestTest do
 
       manifest = Manifest.from_raw!(raw)
 
-      assert [%Cell{name: "coordinator", kind: :agent}, %Cell{name: "runtime.logger", kind: :system}] =
+      assert [
+               %Cell{name: "coordinator", kind: :agent},
+               %Cell{name: "runtime.logger", kind: :system}
+             ] =
                manifest.cells
     end
 
     test "rejects duplicate cell names" do
       raw = %{
         cells: [
-          %{name: "a", kind: :agent, role: "r", topic: "t", partition_scheme: :single, prompt: "p.md"},
-          %{name: "a", kind: :agent, role: "r", topic: "t", partition_scheme: :single, prompt: "p.md"}
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          },
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          }
         ]
       }
 
@@ -50,7 +67,14 @@ defmodule ColonyCore.ManifestTest do
     test "rejects agent cell with no prompt" do
       raw = %{
         cells: [
-          %{name: "a", kind: :agent, role: "r", topic: "t", partition_scheme: :single, prompt: nil}
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: nil
+          }
         ]
       }
 
@@ -62,7 +86,14 @@ defmodule ColonyCore.ManifestTest do
     test "rejects system cell with a prompt" do
       raw = %{
         cells: [
-          %{name: "a", kind: :system, role: "r", topic: "t", partition_scheme: :single, prompt: "p.md"}
+          %{
+            name: "a",
+            kind: :system,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          }
         ]
       }
 
@@ -74,7 +105,14 @@ defmodule ColonyCore.ManifestTest do
     test "rejects invalid kind" do
       raw = %{
         cells: [
-          %{name: "a", kind: :daemon, role: "r", topic: "t", partition_scheme: :single, prompt: "p.md"}
+          %{
+            name: "a",
+            kind: :daemon,
+            role: "r",
+            topic: "t",
+            partition_scheme: :single,
+            prompt: "p.md"
+          }
         ]
       }
 
@@ -86,7 +124,14 @@ defmodule ColonyCore.ManifestTest do
     test "rejects invalid partition scheme" do
       raw = %{
         cells: [
-          %{name: "a", kind: :agent, role: "r", topic: "t", partition_scheme: :nope, prompt: "p.md"}
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r",
+            topic: "t",
+            partition_scheme: :nope,
+            prompt: "p.md"
+          }
         ]
       }
 
@@ -175,7 +220,7 @@ defmodule ColonyCore.ManifestTest do
               topic: "t",
               partition_scheme: {:field, :subject},
               prompt: "p.md",
-              consumes: ["mitigation.proposed"]
+              consumes: ["remediation.proposed"]
             },
             %{
               name: "spec",
@@ -184,7 +229,7 @@ defmodule ColonyCore.ManifestTest do
               topic: "t",
               partition_scheme: {:field, :subject},
               prompt: "p.md",
-              consumes: ["incident.triaged"]
+              consumes: ["blast_radius.assessed"]
             },
             %{
               name: "log",
@@ -196,8 +241,8 @@ defmodule ColonyCore.ManifestTest do
           ]
         })
 
-      assert [%{name: "coord"}] = Manifest.consuming_cells(manifest, "t", "mitigation.proposed")
-      assert [%{name: "spec"}] = Manifest.consuming_cells(manifest, "t", "incident.triaged")
+      assert [%{name: "coord"}] = Manifest.consuming_cells(manifest, "t", "remediation.proposed")
+      assert [%{name: "spec"}] = Manifest.consuming_cells(manifest, "t", "blast_radius.assessed")
       assert [] = Manifest.consuming_cells(manifest, "t", "unknown.type")
     end
   end
@@ -297,10 +342,24 @@ defmodule ColonyCore.ManifestTest do
     test "rejects manifests that disagree" do
       raw = %{
         cells: [
-          %{name: "a", kind: :agent, role: "r1", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]},
-          %{name: "b", kind: :agent, role: "r2", topic: "shared",
-            partition_scheme: {:field, :tenant_id}, prompt: "p.md", consumes: ["x"]}
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r1",
+            topic: "shared",
+            partition_scheme: {:field, :subject},
+            prompt: "p.md",
+            consumes: ["x"]
+          },
+          %{
+            name: "b",
+            kind: :agent,
+            role: "r2",
+            topic: "shared",
+            partition_scheme: {:field, :tenant_id},
+            prompt: "p.md",
+            consumes: ["x"]
+          }
         ]
       }
 
@@ -312,10 +371,24 @@ defmodule ColonyCore.ManifestTest do
     test "accepts identical schemes across multiple cells on a topic" do
       raw = %{
         cells: [
-          %{name: "a", kind: :agent, role: "r1", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]},
-          %{name: "b", kind: :agent, role: "r2", topic: "shared",
-            partition_scheme: {:field, :subject}, prompt: "p.md", consumes: ["x"]}
+          %{
+            name: "a",
+            kind: :agent,
+            role: "r1",
+            topic: "shared",
+            partition_scheme: {:field, :subject},
+            prompt: "p.md",
+            consumes: ["x"]
+          },
+          %{
+            name: "b",
+            kind: :agent,
+            role: "r2",
+            topic: "shared",
+            partition_scheme: {:field, :subject},
+            prompt: "p.md",
+            consumes: ["x"]
+          }
         ]
       }
 
@@ -380,8 +453,15 @@ defmodule ColonyCore.ManifestTest do
       manifest =
         Manifest.from_raw!(%{
           cells: [
-            %{name: "a", kind: :agent, role: "r", topic: "h",
-              partition_scheme: {:hash, :tenant_id}, prompt: "p.md", consumes: ["x"]}
+            %{
+              name: "a",
+              kind: :agent,
+              role: "r",
+              topic: "h",
+              partition_scheme: {:hash, :tenant_id},
+              prompt: "p.md",
+              consumes: ["x"]
+            }
           ]
         })
 

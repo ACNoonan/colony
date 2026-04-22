@@ -15,7 +15,7 @@ defmodule ColonyCore.Envelope.GateTest do
           topic: "colony.agent.events",
           partition_scheme: {:field, :subject},
           prompt: "roles/coordinator.md",
-          consumes: ["mitigation.proposed"]
+          consumes: ["remediation.proposed"]
         }
       ]
     })
@@ -46,7 +46,9 @@ defmodule ColonyCore.Envelope.GateTest do
 
     test "rejects unknown versions" do
       e = event(%{schema_version: 99})
-      assert {:error, {:bad_schema_version, %{got: 99}}} = Gate.check(e, "colony.agent.events", manifest())
+
+      assert {:error, {:bad_schema_version, %{got: 99}}} =
+               Gate.check(e, "colony.agent.events", manifest())
     end
   end
 
